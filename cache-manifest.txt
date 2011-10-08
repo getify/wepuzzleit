@@ -1,0 +1,22 @@
+CACHE MANIFEST
+# cache version: 13
+
+CACHE:
+index.html
+login.html
+new-puzzle.html
+puzzles.html
+play.html
+styles.css
+load.js
+nav.js
+pages.js
+http://ajax.googleapis.com/ajax/libs/jquery/1.6.4/jquery.min.js
+
+# must be online for the websockets to work
+NETWORK:
+*
+
+# if offline, show a different page explaining the need for a connection
+FALLBACK:
+/ /offline.html

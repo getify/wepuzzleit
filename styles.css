@@ -1,0 +1,5 @@
+#logged_in{display:none;}
+.nav{text-align:right;}
+.error{color:red;font-weight:bold;}
+#connection_failed{display:none;}
+#pleasewait{display:none;position:absolute;left:20px;top:5px;height:30px;padding:7px 20px;font-size:20px;background-color:#fff;border:1px solid #000;}
