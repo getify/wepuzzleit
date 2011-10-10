@@ -114,7 +114,7 @@ function parseUri(e){var a=parseUri.options,f=a.parser[a.strictMode?"strict":"lo
 		href = href || current_page;
 		handlePageLoad(href);
 	};
-	
+
 	current_page = getPageName();
-		  
+
 })(window,jQuery);

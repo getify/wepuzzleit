@@ -55,15 +55,17 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 	
 	function login_needed() {
 		function checkLoginReq() {
-			if (session_id && !user_info) {
+			if (!session_id || !user_info) {
 				var current_href = location.href.replace(/^.*?\/([\w0-9\-_]+\.html)/,"$1");
 				gotoPage("login.html",null,false,"login.html?from="+encodeURIComponent(current_href));
 			}
 		}
 		
 		if (current_page != "login.html") {
-			if (session_id && !user_info) checkLoginReq();
-			else if (!session_id) {
+			if (session_check_complete) {
+				checkLoginReq();
+			}
+			else {
 				socket_queue.push(checkLoginReq);
 			}
 		}
@@ -126,7 +128,7 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 				email = $form.children("input[name='email']").val()
 			;
 			
-			socket.emit("login", {session_id:session_id, name:name, email:email} );
+			socket.emit("login",{name:name, email:email});
 		}
 		else {
 			$("#connection_failed").show();
@@ -191,6 +193,8 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 	}
 	
 	function closeGameInList(data) {
+		console.log("closeGameInList: "+JSON.stringify(data));
+		
 		$("#puzzles li[rel='"+data.game_id+"']").remove();
 		if ($("#puzzles li").length == 0) {
 			$("#puzzles").html("-none-");
@@ -201,6 +205,7 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 		var $a = $("<a></a>").attr({"href":"play.html?puzzle="+data.game_id}).html("#"+data.game_id),
 			$li = $("<li></li>").attr({"rel":data.game_id}).append($a)
 		;
+		if ($("#puzzles li").length == 0) $("#puzzles").empty();
 		$("#puzzles").append($li);
 	}
 	
@@ -214,6 +219,8 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 	}
 	
 	function closeCurrentGame(data) {
+		console.log("closeCurrentGame: "+JSON.stringify(data));
+		
 		var parts = parseUri(location.href);
 		
 		// this current game closed!
@@ -229,7 +236,8 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 		reader.onload = function(e){
 			$("#img_preview").empty();
 			
-			if (file.fileSize <= (1024*100)) { // 100kb max image size
+			// Gotcha: Chrome uses `fileSize`, Firefox uses `size`
+			if ((file.fileSize || file.size) <= (1024*100)) { // 100kb max image size
 				var image_contents = e.target.result;
 				var $img = $("<img />").attr({"src":image_contents});
 				$("#img_preview").append($img);
@@ -267,9 +275,9 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 
 	var session_id = retrieveSessionId(),
 		session_initialized = false,
+		session_check_complete = false,
 		socket_queue = [],
 		socket_timeout,
-		pleasewait_timeout,
 		current_page,
 		user_info,
 		socket,
@@ -333,9 +341,7 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 					});
 				
 					socket.on("close_game",closeGameInList);
-					
 					socket.on("open_games",listGames);
-					
 					socket.on("new_game",addGame);
 					
 					socket.emit("list_games",{});
@@ -380,14 +386,10 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 					});
 					
 					socket.on("close_game",closeCurrentGame);
-					
 					socket.on("game_info",loadGame);
-					
 					socket.on("game_error",gameError);
 					
-					var parts = parseUri(location.href),
-						game_id
-					;
+					var parts = parseUri(location.href), game_id;
 		
 					if (parts.queryKey && parts.queryKey["puzzle"]) {
 						game_id = parts.queryKey["puzzle"];
@@ -402,19 +404,28 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 	;
 
 	global.initSession = function() {
+		var disconnect_timeout;
+		
 		session_initialized = true;
 		
 		if (typeof global["io"] != "undefined" && io.connect) {
 			clearTimeout(socket_timeout);
 			socket = io.connect("http://xx.yy.zz.ww");
 			
+			window.addEventListener("unload", function(){
+				clearTimeout(disconnect_timeout);
+			},false);
+			
 			socket.on("disconnect", function(data) {
 				socket = null;
-				logout();
+				clearTimeout(disconnect_timeout);
+				disconnect_timeout = setTimeout(function(){	// use a timeout to suppress the disconnection notice in case of navigation/reload
+					logout();
+				},500);
 			});
 			
 			socket.on("session_valid", function(data) {
-				clearTimeout(pleasewait_timeout);
+				session_check_complete = true;
 				$("#pleasewait").hide();
 				if (data.user_info) {
 					user_info = data.user_info;
@@ -438,7 +449,7 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 			});
 			
 			socket.on("new_session", function(data) {
-				clearTimeout(pleasewait_timeout);
+				session_check_complete = true;
 				$("#pleasewait").hide();
 				session_id = data.session_id;
 				saveSessionId(session_id);
@@ -476,15 +487,14 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 	
 	$(document).ready(function(){
 		$("#logout").bind("click",handleLogout);
+		
+		if (!socket) {
+			socket_timeout = setTimeout(function(){
+				$("#pleasewait").hide();
+				$("#connection_failed").show();
+				pageLoaded();
+			},5000);
+		}
 	});
 
-	socket_timeout = setTimeout(function(){
-		$("#pleasewait").hide();
-		$("#connection_failed").show();
-		pageLoaded();
-	},3000);
-	
-	pleasewait_timeout = setTimeout(function(){
-		$("#pleasewait").show();
-	},200);
 })(window,jQuery);

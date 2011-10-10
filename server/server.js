@@ -31,7 +31,7 @@ app.listen(80, "xx.yy.zz.ww");
 io.configure(function(){
   io.enable('browser client minification');  // send minified client
   io.enable('browser client etag');          // apply etag caching logic based on version number
-//  io.set('log level', 1);                    // reduce logging
+  io.set('log level', 1);                    // reduce logging
   io.set('transports', [                     // enable all transports (optional if you want flashsocket)
       'websocket'
     , 'flashsocket'
@@ -45,9 +45,18 @@ io.sockets.on('connection', function (socket) {
   var session_id;
 
   socket.on('validate_session', function(data) {
-    if (data.session_id && sessions[data.session_id]) {
-      socket.emit('session_valid', {session_id:data.session_id, user_info:users[data.session_id]||null} );
-      if (users[data.session_id]) socket.emit('score_update', {score:users[data.session_id].score} );
+    if (data.session_id && !session_id) {
+      session_id = data.session_id;
+    }
+    if (session_id && sessions[session_id]) {
+      if (users[session_id]) {
+        users[session_id].connected = true;
+        socket.emit('session_valid', {session_id:session_id, user_info:users[session_id]} );
+        socket.emit('score_update', {score:users[session_id].score} );
+      }
+      else {
+        socket.emit('session_valid', {session_id:session_id, user_info:null} );
+      }
     }
     else {
       session_id = new_session_id();
@@ -58,24 +67,23 @@ io.sockets.on('connection', function (socket) {
 
   socket.on('login', function(data) {
     var resp = {};
-    if (!data.session_id || !sessions[data.session_id]) {
-      resp.new_session_id = data.session_id = new_session_id();
+    if (!session_id || !sessions[session_id]) {
+      resp.new_session_id = session_id = new_session_id();
     }
-    session_id = data.session_id;
     if (users[session_id]) {
       resp.already_logged_in = true;
       resp.name = users[session_id].name;
       resp.email = users[session_id].email;
+      users[session_id].connected = true;
     }
     else {
       if (!data.name || data.name.length < 2) resp.error = "First name must be 2 or more characters.";
       else if (!data.email || data.email.length < 6 || !(data.email.indexOf("@") > 0)) resp.error = "Email must be valid.";
       else {
-        var user_found = false, user_connected = false;
+        var user_found = false;
         for (var i in users) {
           if (i != session_id && users[i] && users[i].name.toLowerCase() == data.name.toLowerCase() && users[i].email.toLowerCase() == data.email.toLowerCase()) {
             user_found = i;
-            user_connected = users[i].connected;
             break;
           }
         }
@@ -103,11 +111,11 @@ io.sockets.on('connection', function (socket) {
       }
     }
     if (resp.error) {
-      socket.emit('login_error',resp);
+      socket.emit('login_error', resp );
     }
     else {
-      socket.emit('score_update', {score:users[session_id].score} );
       socket.emit('login_complete', resp );
+      socket.emit('score_update', {score:users[session_id].score} );
     }
 
   });
@@ -138,12 +146,14 @@ io.sockets.on('connection', function (socket) {
     games[game_id].is_closed = false;
     games[game_id].img = data.dataURL;
     cb(game_id);
-    socket.broadcast.emit("new_game", {"game_id":game_id} );
+
+    io.sockets.emit("new_game", {"game_id":game_id} ); // broadcast the message to all sockets
 
     setTimeout(function(){ 
       games[game_id].is_closed = true;
       games[game_id].img = null;
-      socket.broadcast.emit("close_game", {"game_id":game_id} );
+
+      io.sockets.emit("close_game", {"game_id":game_id} ); // broadcast the message to all sockets
     },1000*120); // games expire after 2 minutes 
   });
 
