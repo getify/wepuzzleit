@@ -14,7 +14,8 @@ function parseUri(e){var a=parseUri.options,f=a.parser[a.strictMode?"strict":"lo
 		dom_ready = false,
 		state_replaced = false,
 		unload_handlers = [],
-		requested_page = null
+		requested_page = null,
+		page_cache = {}
 	;
 
 	function ajaxLink(evt) {
@@ -59,32 +60,61 @@ function parseUri(e){var a=parseUri.options,f=a.parser[a.strictMode?"strict":"lo
 	};
 
 	global.gotoPage = function(page,force,suppressHistory,replaceHistoryHref) {
+		
+		// page pre-injection listener
+		function preInjection(data) {
+			if (pagePreCheck(page)) {
+				runPageUnloadHandlers();
+				return data;
+			}
+			else {
+				return "";
+			}
+		}
+		
+		// post-injection handler
+		function postInjection() {
+			requested_page = null;
+			page = getPageName(page);
+			current_page = page;
+			if (!suppressHistory) {
+				if (replaceHistoryHref) {
+					state_replaced = true;
+					History.replaceState(null,null,replaceHistoryHref);
+				}
+				else {
+					History.pushState(null,null,(page=="index.html"?"./":page));
+				}
+			}
+			pageLoaded(page);
+		}
+		
+		
 		page = getPageName(page);
 		if (requested_page && page == requested_page) return;
 		
 		requested_page = page;
 		if (force || page != current_page) {
-			// set up a pre-injection listener, to run current page's `unload_handler`(s), if applicable
-			$.ajaxSetup({dataFilter:function(data,type){
-				runPageUnloadHandlers();
-				return data;
-			}});
-			$("#content").load(page+" #content",function(){
-				$.ajaxSetup({dataFilter:function(){}}); // release the pre-injection listener
-				requested_page = null;
-				page = getPageName(page);
-				current_page = page;
-				if (!suppressHistory) {
-					if (replaceHistoryHref) {
-						state_replaced = true;
-						History.replaceState(null,null,replaceHistoryHref);
-					}
-					else {
-						History.pushState(null,null,(page=="index.html"?"./":page));
-					}
+			// can we load from in-memory cache?
+			if (page_cache[page]) {
+				if (preInjection(page_cache[page])) {
+					$("#content").html(page_cache[page]);
+					postInjection(page);
 				}
-				pageLoaded(page);
-			});
+			}
+			// otherwise, load via ajax
+			else {
+				$.ajaxSetup({dataFilter:function(data){
+					// save the page #content to avoid reloads
+					// NOTE: this logic taken from jquery's $.load() in ajax.js
+					page_cache[page] = $("<div>").append(data.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,"")).find("#content").html();
+					return preInjection(data);
+				}}); // attach pre-injection listener
+				$("#content").load(page+" #content",function(){
+					$.ajaxSetup({dataFilter:function(){}}); // release pre-injection listener
+					postInjection(page);
+				});
+			}
 		}
 	};
 	

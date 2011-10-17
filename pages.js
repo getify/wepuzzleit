@@ -5,6 +5,8 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 
 (function(global,$){
 		  
+	function is_func(func) { return (Object.prototype.toString.call(check) == "[object Function]"); }
+		  
 	function processSocketQueue() {
 		while (socket_queue.length) {
 			(socket_queue.shift())();
@@ -53,7 +55,7 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 		}, false);
 	}
 	
-	function login_needed() {
+	function login_needed(page,defer) {
 		function checkLoginReq() {
 			if (!session_id || !user_info) {
 				var current_href = location.href.replace(/^.*?\/([\w0-9\-_]+\.html)/,"$1");
@@ -61,14 +63,20 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 			}
 		}
 		
-		if (current_page != "login.html") {
+		if (page != "login.html" && page != "index.html") {
 			if (session_check_complete) {
-				checkLoginReq();
+				if (!defer) {
+					checkLoginReq();
+					return true;
+				}
+				else return checkLoginReq;
 			}
 			else {
 				socket_queue.push(checkLoginReq);
+				return true;
 			}
 		}
+		return false;
 	}
 	
 	function login_complete(data) {
@@ -193,8 +201,6 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 	}
 	
 	function closeGameInList(data) {
-		console.log("closeGameInList: "+JSON.stringify(data));
-		
 		$("#puzzles li[rel='"+data.game_id+"']").remove();
 		if ($("#puzzles li").length == 0) {
 			$("#puzzles").html("-none-");
@@ -219,8 +225,6 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 	}
 	
 	function closeCurrentGame(data) {
-		console.log("closeCurrentGame: "+JSON.stringify(data));
-		
 		var parts = parseUri(location.href);
 		
 		// this current game closed!
@@ -390,7 +394,7 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 					socket.on("game_error",gameError);
 					
 					var parts = parseUri(location.href), game_id;
-		
+					
 					if (parts.queryKey && parts.queryKey["puzzle"]) {
 						game_id = parts.queryKey["puzzle"];
 						socket.emit("load_game",{game_id:game_id});
@@ -406,67 +410,65 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 	global.initSession = function() {
 		var disconnect_timeout;
 		
-		session_initialized = true;
-		
-		if (typeof global["io"] != "undefined" && io.connect) {
-			clearTimeout(socket_timeout);
-			socket = io.connect("http://xx.yy.zz.ww");
+		if (!session_initialized) {
+			session_initialized = true;
 			
-			window.addEventListener("unload", function(){
-				clearTimeout(disconnect_timeout);
-			},false);
-			
-			socket.on("disconnect", function(data) {
-				socket = null;
-				clearTimeout(disconnect_timeout);
-				disconnect_timeout = setTimeout(function(){	// use a timeout to suppress the disconnection notice in case of navigation/reload
-					logout();
-				},500);
-			});
-			
-			socket.on("session_valid", function(data) {
-				session_check_complete = true;
-				$("#pleasewait").hide();
-				if (data.user_info) {
-					user_info = data.user_info;
-					processSocketQueue();
-					if (current_page == "login.html") {
-						overrideLoginForm();
+			if (typeof global["io"] != "undefined" && io.connect) {
+				clearTimeout(socket_timeout);
+				socket = io.connect("http://xx.yy.zz.ww");
+				
+				window.addEventListener("unload", function(){
+					clearTimeout(disconnect_timeout);
+				},false);
+				
+				socket.on("disconnect", function(data) {
+					socket = null;
+					clearTimeout(disconnect_timeout);
+					disconnect_timeout = setTimeout(function(){	// use a timeout to suppress the disconnection notice in case of navigation/reload
+						logout();
+					},500);
+				});
+				
+				socket.on("session_valid", function(data) {
+					session_check_complete = true;
+					$("#pleasewait").hide();
+					if (data.user_info) {
+						user_info = data.user_info;
+						processSocketQueue();
+						if (current_page == "login.html") {
+							overrideLoginForm();
+						}
+						else {
+							if (current_page == "index.html" && session_id && user_info) {
+								$(".step1").css({"text-decoration":"line-through"});
+							}
+							handleLoggedInHeader();
+						}
 					}
 					else {
-						if (current_page == "index.html" && session_id && user_info) {
-							$(".step1").css({"text-decoration":"line-through"});
-						}
-						handleLoggedInHeader();
+						processSocketQueue();
+						login_needed(current_page);
 					}
-				}
-				else {
+				});
+				
+				socket.on("new_session", function(data) {
+					session_check_complete = true;
+					$("#pleasewait").hide();
+					session_id = data.session_id;
+					saveSessionId(session_id);
 					processSocketQueue();
-					if (current_page != "index.html") { // login necessary beyond homepage!
-						login_needed();
-					}
-				}
-			});
-			
-			socket.on("new_session", function(data) {
-				session_check_complete = true;
-				$("#pleasewait").hide();
-				session_id = data.session_id;
-				saveSessionId(session_id);
-				processSocketQueue();
-				if (current_page != "index.html") { // login necessary beyond homepage!
-					login_needed();
-				}
-			});
-			
-			socket.on("score_update", function(data) {
-				$("#score").html(data.score);
-			});
-			
-			socket.emit("validate_session", {session_id:session_id} );
-		}
-		else {
-			$("#connection_failed").show();
+					login_needed(current_page);
+				});
+				
+				socket.on("score_update", function(data) {
+					$("#score").html(data.score);
+				});
+				
+				socket.emit("validate_session", {session_id:session_id} );
+			}
+			else {
+				$("#connection_failed").show();
+			}
 		}
 	};
 	
@@ -476,13 +478,30 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 		}
 		
 		current_page = page;
-		if (!session_initialized) {
+		if (!session_check_complete) {
 			initSession();
 			socket_queue.push(doHandler);
 		}
 		else {
 			doHandler();
 		}
+	};
+	
+	global.pagePreCheck = function(page) {
+		switch (page) {
+			case "play.html":
+			case "puzzles.html":
+			case "new-puzzle.html":
+				if (!session_id || !user_info) {
+					var check = login_needed(page,true);
+					if (check !== false) {
+						if (is_func(check)) setTimeout(check,0); // run the login check in a moment
+						return false;
+					}
+				}
+				break;
+		}
+		return true;
 	};
 	
 	$(document).ready(function(){
