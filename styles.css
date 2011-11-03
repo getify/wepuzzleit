@@ -3,3 +3,10 @@
 .error{color:red;font-weight:bold;}
 #connection_failed{display:none;}
 #pleasewait{display:none;position:absolute;left:20px;top:5px;height:30px;padding:7px 20px;font-size:20px;background-color:#fff;border:1px solid #000;}
+#game_preview{display:none;}
+#grid{border:none;}
+#grid span{display:block;}
+#grid span.light{background-color:#ececec;}
+#grid span.dark{background-color:#cacaca;}
+#tiles{width:800px;border:1px solid #000;margin:5px 0px;}
+#tiles img{position:relative;padding:0px;margin:0px;}
