@@ -1,4 +1,4 @@
-var ww_socket = "http://xx.yy.zz.ww:xxxx";
+var ww_socket = "http://xx.yy.zz.ww:80";
 
 importScripts(ww_socket+"/socket.io/socket.io.js");
 
@@ -17,7 +17,7 @@ function process_socket_queue() {
 
 function initializeGameSession(session_id,game_id) {
 	if (!socket) {
-		socket = io.connect(ww_socket);
+		socket = io.connect(ww_socket+"/ww");
 	}
 	
 	if (!socket_initialized) {

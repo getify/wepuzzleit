@@ -50,11 +50,8 @@ function scramble_tiles(game) {
 }
 
 
-var main = require('http').createServer(defaultServer),
-    main_io = require('/usr/local/lib/node_modules/socket.io').listen(main),
-
-    ww = require('http').createServer(defaultServer),
-    ww_io = require('/usr/local/lib/node_modules/socket.io').listen(ww),
+var httpserv = require('http').createServer(defaultServer),
+    io = require('/usr/local/lib/node_modules/socket.io').listen(httpserv),
 
     sessions = {},
     users = {},
@@ -62,28 +59,14 @@ var main = require('http').createServer(defaultServer),
     tiles = {}
 ;
 
-main.listen(xxxx, "xx.yy.zz.ww");
-ww.listen(yyyy, "xx.yy.zz.ww");
+httpserv.listen(80, "xx.yy.zz.ww");
 
 
-main_io.configure(function(){
-//  main_io.enable('browser client minification');  // send minified client
-  main_io.enable('browser client etag');          // apply etag caching logic based on version number
-//  main_io.set('log level', 1);                    // reduce logging
-  main_io.set('transports', [                     // enable all transports (optional if you want flashsocket)
-      'websocket'
-    , 'flashsocket'
-    , 'htmlfile'
-    , 'xhr-polling'
-    , 'jsonp-polling'
-  ]);
-});
-
-ww_io.configure(function(){
-//  ww_io.enable('browser client minification');  // send minified client
-  ww_io.enable('browser client etag');          // apply etag caching logic based on version number
-  ww_io.set('log level', 1);                    // reduce logging
-  ww_io.set('transports', [                     // enable all transports (optional if you want flashsocket)
+io.configure(function(){
+//  io.enable('browser client minification');  // send minified client
+  io.enable('browser client etag');          // apply etag caching logic based on version number
+//  io.set('log level', 1);                    // reduce logging
+  io.set('transports', [                     // enable all transports (optional if you want flashsocket)
       'websocket'
     , 'flashsocket'
     , 'htmlfile'
@@ -93,31 +76,37 @@ ww_io.configure(function(){
 });
 
 
-// main app socket
-main_io.sockets.on('connection', function (socket) {
+// site socket channel
+io.of('/site').on('connection', function (socket) {
   var session_id, current_game_id;
 
   function leave_game(game_id) {
     try { socket.leave("game:"+game_id); } catch (err) { }
     var game = games[game_id];
 
-    for (var i=0; i<game.users.length; i++) {
-      if (game.users[i] == session_id) {
-        game.users.splice(i,1);
-        break;
+    if (game && game.users) {
+      for (var i=0; i<game.users.length; i++) {
+        if (game.users[i] == session_id) {
+          game.users.splice(i,1);
+          break;
+        }
+      }
+
+      current_game_id = null;
+      if (session_id && users[session_id]) {
+        io.of('/site').in("game:"+game_id).emit("user_leave", {"name":users[session_id].name} );
       }
     }
-
-    current_game_id = null;
-    main_io.sockets.in("game:"+game_id).emit("user_leave", {"name":users[session_id].name} );
   }
 
   function game_user_list(game_id) {
     var game = games[game_id],
         list = []
     ;
-    for (var i=0; i<game.users.length; i++) {
-      list.push(users[game.users[i]].name);
+    if (game && game.users) {
+      for (var i=0; i<game.users.length; i++) {
+        list.push(users[game.users[i]].name);
+      }
     }
     return list;
   }
@@ -229,7 +218,7 @@ main_io.sockets.on('connection', function (socket) {
 
     games[current_game_id].users.push(session_id);
     socket.join("game:"+current_game_id);
-    main_io.sockets.in("game:"+current_game_id).emit("user_join", {"name":users[session_id].name} );
+    io.of('/site').in("game:"+current_game_id).emit("user_join", {"name":users[session_id].name} );
   });
 
   socket.on('leave_game', function(data) {
@@ -250,7 +239,7 @@ main_io.sockets.on('connection', function (socket) {
     scramble_tiles(game);
     cb(game_id);
 
-    main_io.sockets.emit("new_game", {"game_id":game_id} ); // broadcast the message to all sockets
+    io.of('/site').emit("new_game", {"game_id":game_id} ); // broadcast the message to all sockets
 
     // force expire the game after 10 minutes
     setTimeout(function(){
@@ -265,13 +254,14 @@ main_io.sockets.on('connection', function (socket) {
       game.tile_size = 0;
       game.users = null;
 
-      main_io.sockets.emit("close_game", {"game_id":game_id} ); // broadcast the message to all sockets
-    },1000*600);
+      io.of('/site').emit("close_game", {"game_id":game_id} ); // broadcast the message to all sockets
+    },1000*60);
   });
 });
 
-// web worker socket
-ww_io.sockets.on('connection', function(socket) {
+
+// web worker socket channel
+io.of('/ww').on('connection', function(socket) {
   var session_id, current_game_id;
 
   socket.on('establish_game_session', function(data) {

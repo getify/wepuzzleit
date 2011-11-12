@@ -589,7 +589,7 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 			
 			if (typeof global["io"] != "undefined" && io.connect) {
 				clearTimeout(socket_timeout);
-				socket = io.connect(main_socket);
+				socket = io.connect(site_socket+"/site");
 				
 				window.addEventListener("unload", function(){
 					clearTimeout(disconnect_timeout);
