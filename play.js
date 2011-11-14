@@ -67,7 +67,7 @@
 			$tiles = $("<div />").attr("id","tiles"),
 			$table = $("<table />").attr({id:"grid","cellspacing":"0","cellpadding":"0","border":"0"}),
 			$tile = $("<div />"), $img = $("<img />"),
-			$td, $tr, i
+			$td, $tr, i, cl
 		;
 				
 		$table.html("<tr><td><span></span></td></tr>");
@@ -80,11 +80,13 @@
 		for (i=0; i<(rows-1); i++) {
 			$table.append($tr.clone());
 		}
-		i=0;
+		i = 0;
+		cl = "dark";
 		$table.find("span").each(function(){
-			var idx = i + ((Math.floor(i / cols) % 2 == 0) ? 0 : 1);
-			$(this).css({width:tile_size+"px",height:tile_size+"px"}).addClass((idx % 2 == 0) ? "light" : "dark");
+			cl = (cl == "dark") ? "light" : "dark";
+			$(this).css({width:tile_size+"px",height:tile_size+"px"}).addClass(cl);
 			i++;
+			if (cols % 2 == 0 && i % cols == 0) cl = (cl == "dark") ? "light" : "dark";
 		});
 		
 		for (i in tiles) {

@@ -251,10 +251,24 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 	
 	function generatePreview(img,imgtype) {
 		var $img = $(img),
-			$preview_canvas = $("<canvas />").attr({width:"150",height:"150"}),
-			context = $preview_canvas.get(0).getContext("2d")
+			max_preview_width = 150, max_preview_height = 150,
+			$preview_canvas = $("<canvas />"),
+			context = $preview_canvas.get(0).getContext("2d"),
+			delta_width = $img.width() - max_preview_width, delta_height = $img.height() - max_preview_height,
+			preview_width, preview_height
 		;
-		context.drawImage(img,0,0,$img.width(),$img.height(),0,0,150,150);
+		
+		if (delta_width >= delta_height) {
+			preview_width = max_preview_width;
+			preview_height = Math.floor($img.height() / $img.width() * preview_width);
+		}
+		else {
+			preview_height = max_preview_height;
+			preview_width = Math.floor($img.width() / $img.height() * preview_eight);
+		}
+		
+		$preview_canvas.attr({width:preview_width,height:preview_height});
+		context.drawImage(img,0,0,$img.width(),$img.height(),0,0,preview_width,preview_height);
 		return $preview_canvas.get(0).toDataURL(imgtype);
 	}
 	

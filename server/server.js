@@ -214,11 +214,16 @@ io.of('/site').on('connection', function (socket) {
   socket.on('join_game', function(data) {
     current_game_id = data.game_id;
 
-    socket.emit("user_list", {"list":game_user_list(current_game_id)} );
+    if (games[current_game_id] && games[current_game_id].users) {
+      socket.emit("user_list", {"list":game_user_list(current_game_id)} );
 
-    games[current_game_id].users.push(session_id);
-    socket.join("game:"+current_game_id);
-    io.of('/site').in("game:"+current_game_id).emit("user_join", {"name":users[session_id].name} );
+      games[current_game_id].users.push(session_id);
+      socket.join("game:"+current_game_id);
+      io.of('/site').in("game:"+current_game_id).emit("user_join", {"name":users[session_id].name} );
+    }
+    else {
+      socket.emit("game_error",{});
+    }
   });
 
   socket.on('leave_game', function(data) {
