@@ -159,6 +159,7 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 				$(".step1").css({"text-decoration":"none"});
 			}
 			else {
+				user_info = null;
 				gotoPage("index.html");
 			}
 			if (socket) {
@@ -384,7 +385,7 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 						
 						$("#upload").removeAttr("disabled").bind("click",function(){
 							$(this).attr({"disabled":"disabled"});
-							uploadImage(preview_img_data,img_tiles,rows,cols,tile_size);
+							createGame(preview_img_data,img_tiles,rows,cols,tile_size);
 						});
 						
 					});
@@ -401,15 +402,10 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 		reader.readAsDataURL(file);
 	}
 	
-	function uploadImage(preview_img_data,img_tiles,rows,cols,tile_size) {
-		socket.emit("upload_image",{preview:preview_img_data,tiles:img_tiles,rows:rows,cols:cols,tile_size:tile_size},function(game_id){
+	function createGame(preview_img_data,img_tiles,rows,cols,tile_size) {
+		socket.emit("create_game",{preview:preview_img_data,tiles:img_tiles,rows:rows,cols:cols,tile_size:tile_size},function(game_id){
 			gotoPage("play.html",null,false,"play.html?puzzle="+game_id);
 		});
-	}
-	
-	function loadGame(data) {
-		var $img = $("<img />").attr({"src":data.dataURL});
-		$("#game").empty().append($img);
 	}
 	
 	function gameError(data) {
@@ -428,6 +424,60 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 		$("#whosplaying li[data-user='"+name+"']").remove();
 	}
 	
+	function setGameClockTimer() {
+		game_clock_interval = setInterval(function(){ updateGameClock({time_left:(game_clock-1)}); },1000);
+	}
+	
+	function updateGameClock(data) {
+		var minutes, seconds, clock_text = "";
+		
+		// clock hasn't been set yet, so do it
+		if (game_clock == null) {
+			game_clock = data.time_left;
+			if (game_clock_interval) {
+				clearInterval(game_clock_interval);
+			}
+			setGameClockTimer();
+		}
+		// don't make the clock go backwards... only update if lower
+		else if (data.time_left < game_clock) {
+			game_clock = data.time_left;
+			
+			// set timer if not currently set.
+			if (!game_clock_interval) {
+				setGameClockTimer();
+			}
+		}
+		// clock is ahead/askew... wait/resync
+		else {
+			if (game_clock_interval) {
+				clearInterval(game_clock_interval);
+				game_clock_interval = null;
+			}
+			
+			var clock_skew = data.time_left - game_clock;
+			// should we adjust, or just wait for the next sync?
+			if (clock_skew < 5) {
+				setTimeout(function(){
+					game_clock = data.time_left - clock_skew;
+					setGameClockTimer();
+				},clock_skew*1000);
+			}
+		}
+		
+		if (!$game_clock_text) $game_clock_text = $("#game_clock span");
+		
+		minutes = Math.floor(game_clock / 60);
+		seconds = game_clock - (minutes * 60);
+		
+		if (minutes > 0) clock_text += minutes;
+		clock_text += ":";
+		if (seconds < 10) clock_text += "0";
+		clock_text += seconds;
+		
+		$game_clock_text.text(clock_text);
+	}
+		
 	function userList(data) {
 		for (var i=0; i<data.list.length; i++) {
 			userJoinGame({name:data.list[i]});
@@ -446,6 +496,9 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 		current_page,
 		user_info,
 		socket,
+		$game_clock_text,
+		game_clock,
+		game_clock_interval,
 		handlers = {
 			"index.html":function() {
 				// welcome home
@@ -544,52 +597,63 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 			
 			
 			"play.html":function() {
+				var current_game_session_id;
+				
 				if (!session_id || !user_info) return login_needed("play.html");
+				
+				$game_clock_text = game_clock = null;
 				
 				if (socket) {
 					// clean up after ourself later
 					registerPageUnloadHandler(function(){
+						if (game_clock_interval) {
+							clearInterval(game_clock_interval);
+							game_clock_interval = null;
+						}
+						
 						if (socket) {
 							socket.removeListener("close_game",closeCurrentGame);
-							socket.removeListener("game_info",loadGame);
 							socket.removeListener("game_error",gameError);
 							socket.removeListener("user_list",userList);
 							socket.removeListener("user_join",userJoinGame);
 							socket.removeListener("user_leave",userLeaveGame);
+							socket.removeListener("game_clock",updateGameClock);
+							socket.removeListener("freeze_game",freezeGameClock);
 							
 							if (game_id) {
-								socket.emit("leave_game",{game_id:game_id});
+								socket.emit("leave_game",{game_session_id:current_game_session_id});
 							}
 						}
 						quitGame();
+						$game_clock_text = game_clock = null;
 					});
 					
 					socket.on("close_game",closeCurrentGame);
-					socket.on("game_info",loadGame);
 					socket.on("game_error",gameError);
 					socket.on("user_list",userList);
 					socket.on("user_join",userJoinGame);
 					socket.on("user_leave",userLeaveGame);
+					socket.on("game_clock",updateGameClock);
+					socket.on("freeze_game",freezeGameClock);
 					
 					var parts = parseUri(location.href), game_id;
 					
 					if (parts.queryKey && parts.queryKey["puzzle"]) {
 						game_id = parts.queryKey["puzzle"];
-						socket.emit("join_game",{game_id:game_id});
-					}
+						
+						if (!play_code) {
+							play_code = $LAB.script("play.js?_="+Math.random());
+						}
 
-					if (!play_code) {
-						play_code = $LAB.script("play.js");
+						socket.emit("join_game",{game_id:game_id},function(game_session_id){
+							current_game_session_id = game_session_id;
+							play_code.wait(function(){
+								playGame(game_session_id);
+							});
+						});
 					}
-					
-					play_code.wait(function(){
-						if (game_id) {
-							playGame(session_id,game_id);
-						}
-						else {
-							gameError({});
-						}
-					});
+					else gameError({});
+
 				}
 			}
 		}
@@ -612,9 +676,9 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 				socket.on("disconnect", function(data) {
 					socket = null;
 					clearTimeout(disconnect_timeout);
-					disconnect_timeout = setTimeout(function(){	// use a timeout to suppress the disconnection notice in case of navigation/reload
+					disconnect_timeout = setTimeout(function(){	// use a timeout to delay the disconnection notice in case of navigation/reload
 						logout();
-					},500);
+					},750);
 				});
 				
 				socket.on("session_valid", function(data) {
@@ -690,6 +754,13 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 				break;
 		}
 		return true;
+	};
+	
+	global.freezeGameClock = function() {
+		clearInterval(game_clock_interval);
+		game_clock_interval = null;
+		$("#game_clock span").text(":00 (game over!)");
+		freezeGamePlay();
 	};
 	
 	$(document).ready(function(){

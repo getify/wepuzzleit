@@ -8,5 +8,9 @@
 #grid span{display:block;}
 #grid span.light{background-color:#ececec;}
 #grid span.dark{background-color:#cacaca;}
+#grid td,#grid td span{overflow:hidden;}
 #tiles{width:800px;border:1px solid #000;margin:5px 0px;}
-#tiles img{position:relative;padding:0px;margin:0px;}
+#tiles img{position:relative;padding:0px;margin:0px;-moz-user-select:none;-webkit-user-select:none;cursor:pointer;}
+.draggable_img{position:absolute;-moz-user-select:none;-webkit-user-select:none;cursor:pointer;}
+.dragged_img{cursor:default;z-index:4998;}
+#game_clock{position:fixed;right:3px;bottom:3px;height:25px;background-color:#ddd;padding:5px;border:1px solid #000;z-index:4999;}
