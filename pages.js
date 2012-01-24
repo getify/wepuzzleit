@@ -4,9 +4,14 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 
 
 (function(global,$){
-		  
+
+	var MAX_FILE_SIZE = 150*1024, // 150k max file size
+		MIN_IMG_WIDTH = 250, MIN_IMG_HEIGHT = 250,
+		MAX_IMG_WIDTH = 700, MAX_IMG_HEIGHT = 700
+	;
+
 	function is_func(func) { return (Object.prototype.toString.call(check) == "[object Function]"); }
-		  
+
 	function processSocketQueue() {
 		while (socket_queue.length) {
 			(socket_queue.shift())();
@@ -163,7 +168,7 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 				gotoPage("index.html");
 			}
 			if (socket) {
-				try { 
+				try {
 					socket.emit("logout", {session_id:session_id}, function(){
 						socket.emit("validate_session", {} );
 					});
@@ -203,16 +208,23 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 	
 	function closeGameInList(data) {
 		$("#puzzles li[rel='"+data.game_id+"']").remove();
-		if ($("#puzzles li").length == 0) {
+		if ($("#puzzles li").length === 0) {
 			$("#puzzles").html("-none-");
 		}
 	}
 	
 	function addGame(data) {
-		var $a = $("<a></a>").attr({"href":"play.html?puzzle="+data.game_id}).html("#"+data.game_id),
-			$li = $("<li></li>").attr({"rel":data.game_id}).append($a)
-		;
-		if ($("#puzzles li").length == 0) $("#puzzles").empty();
+		var $a = $("<a></a>"), $li = $("<li></li>");
+
+		$a
+		.html("#"+data.game_id)
+		.attr({href: "play.html?puzzle="+data.game_id});
+
+		$li
+		.attr({rel:data.game_id})
+		.append($a);
+
+		if ($("#puzzles li").length === 0) $("#puzzles").empty();
 		$("#puzzles").append($li);
 	}
 	
@@ -234,73 +246,135 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 		}
 	}
 	
-	function generateTiles(img,imgtype,tile_size) {
-		var $img = $(img), width = $img.width(), height = $img.height(),
+	function generateTiles($preview_img,preview_img_type,tile_size) {
+		var preview_img = $preview_img.get(0),
+			img_width = $preview_img.width(), img_height = $preview_img.height(),
 			$tile_canvas = $("<canvas />").attr({width:tile_size,height:tile_size}),
 			context = $tile_canvas.get(0).getContext("2d"),
 			x, y, tiles = []
 		;
 		
-		for (y=0; y<height; y+=tile_size) {
-			for (x=0; x<width; x+=tile_size) {
-				context.drawImage(img,x,y,tile_size,tile_size,0,0,tile_size,tile_size);
-				tiles.push($tile_canvas.get(0).toDataURL(imgtype));
+		for (y=0; y<img_height; y+=tile_size) {
+			for (x=0; x<img_width; x+=tile_size) {
+				context.drawImage(preview_img,
+					x, y, tile_size, tile_size,
+					0, 0, tile_size, tile_size
+				);
+				tiles.push($tile_canvas.get(0).toDataURL(preview_img_type));
 			}
 		}
 		return tiles;
 	}
 	
-	function generatePreview(img,imgtype) {
-		var $img = $(img),
-			max_preview_width = 150, max_preview_height = 150,
-			$preview_canvas = $("<canvas />"),
-			context = $preview_canvas.get(0).getContext("2d"),
-			delta_width = $img.width() - max_preview_width, delta_height = $img.height() - max_preview_height,
-			preview_width, preview_height
+	function generateGameOverview($preview_img,preview_img_type) {
+		var preview_img = $preview_img.get(0),
+			img_width = $preview_img.width(), img_height = $preview_img.height(),
+			max_overview_width = Math.floor(img_width * 0.5),
+			max_overview_height = Math.floor(img_height * 0.5),
+			$overview_canvas = $("<canvas />"),
+			context = $overview_canvas.get(0).getContext("2d"),
+			delta_width = img_width - max_overview_width,
+			delta_height = img_height - max_overview_height,
+			overview_width, overview_height
 		;
 		
 		if (delta_width >= delta_height) {
-			preview_width = max_preview_width;
-			preview_height = Math.floor($img.height() / $img.width() * preview_width);
+			overview_width = max_overview_width;
+			overview_height = Math.floor(img_height / img_width * overview_width);
 		}
 		else {
-			preview_height = max_preview_height;
-			preview_width = Math.floor($img.width() / $img.height() * preview_eight);
+			overview_height = max_overview_height;
+			overview_width = Math.floor(img_width / img_height * overview_height);
 		}
 		
-		$preview_canvas.attr({width:preview_width,height:preview_height});
-		context.drawImage(img,0,0,$img.width(),$img.height(),0,0,preview_width,preview_height);
-		return $preview_canvas.get(0).toDataURL(imgtype);
+		$overview_canvas.attr({width:overview_width,height:overview_height});
+		context.drawImage(preview_img,0,0,img_width,img_height,0,0,overview_width,overview_height);
+		return $overview_canvas.get(0).toDataURL(preview_img_type);
+	}
+
+	// build the overlay grid on top of the preview image
+	function buildPreviewGrid($preview_img,width,height,tile_size) {
+
+		function drawGrid() {
+			for (var x=tile_size; x<width; x+=tile_size) {
+				context.rect(x-1,0,2,height);
+			}
+			for (var y=tile_size; y<height; y+=tile_size) {
+				context.rect(0,y-1,width,2);
+			}
+		}
+
+		var $preview_grid = $("<canvas />").attr({id:"preview_grid"}),
+			context = $preview_grid.get(0).getContext("2d")
+		;
+
+		// set up the grid canvas
+		$preview_grid
+		.attr({width:width,height:height})
+		.css({width:width+"px",height:height+"px"});
+
+		context.save();
+		// first, draw the grid to use a mask for the preview image
+		context.beginPath();
+		drawGrid();
+		context.clip(); // turns the drawing into a mask
+
+		// next, draw the preview image onto the canvas using the mask
+		context.drawImage($preview_img.get(0),0,0);
+		context.restore();
+
+		// set composite mode for redrawing the grid on top of the preview image
+		context.globalCompositeOperation = "lighter";
+		context.globalAlpha = 0.7;
+
+		// now, redraw the grid clipped preview image again, using the composite to lighten
+		context.save();
+		context.beginPath();
+		drawGrid();
+		context.clip(); // turns the drawing into a mask
+
+		// redraw the preview image (masked by the grid) onto the canvas
+		context.drawImage($preview_img.get(0),0,0);
+		context.restore();
+
+
+		return $preview_grid;
 	}
 	
-	function processImage($img,imgtype,processingDone) {
-		var $canvas = $("<canvas />"),
-			context,
-			img_width = $img.width(), img_height = $img.height(),
-			tiled_img_data,
+	// process preview image, normalize size and re-render, then draw grid on top
+	function processPreview(difficulty,$orig_preview_img) {
+		var img_width = $orig_preview_img.width(), img_height = $orig_preview_img.height(),
+			max_dimension = Math.max(img_width,img_height),
+			min_difficulty_tiles = (difficulty == "easy" ? 5 : (difficulty == "medium" ? 7 : 9)),
+			tile_size = Math.max(40,Math.min(120,Math.floor(max_dimension / min_difficulty_tiles))),
+
+			preview_img_type = $orig_preview_img.attr("data-img-type"),
 			new_width = img_width, new_height = img_height,
 			tiled_width, tiled_height,
-			min_width = 250, min_height = 250, // TODO: use a constant for min-image-size
-			max_width = 600, max_height = 600,
-			delta_width = img_width - max_width, delta_height = img_height - max_height,
+			delta_width = img_width - MAX_IMG_WIDTH, delta_height = img_height - MAX_IMG_HEIGHT,
 			img_x = 0, img_y = 0,
 			img_ratio = 1,
-			tile_size = 50,
-			cols = min_width / tile_size
+			rows, cols,
+			$canvas = $("<canvas />"), context = $canvas.get(0).getContext("2d"),
+			$preview_container = $("#preview_container"),
+			$preview_img = $("<img />").attr({id:"preview_img"})
 		;
+
+		// hide the container while we process and redo the preview image
+		$preview_container.empty().css({"visibility":"hidden"});
 
 		// is there overflow in either direction?
 		if (delta_width > 0 || delta_height > 0) {
 			// down-scale resize in the direction of the smallest difference, maintaining aspect ratio
 			// resize horizontally?
 			if (delta_width > 0 && (delta_height <= 0 || delta_width <= delta_height)) {
-				new_width = max_width;
+				new_width = MAX_IMG_WIDTH;
 				img_ratio = new_width / img_width;
 				new_height = img_height * img_ratio;
 			}
 			// otherwise, resize vertically?
 			else if (delta_height > 0 && (delta_width <= 0 || delta_height <= delta_width)) {
-				new_height = max_height;
+				new_height = MAX_IMG_HEIGHT;
 				img_ratio = new_height / img_height;
 				new_width = img_width * img_ratio;
 			}
@@ -309,103 +383,146 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 		// snap dimensions (down) to tile_size (and max dimensions), via cropping
 		tiled_width = new_width;
 		tiled_height = new_height;
-		if (tiled_width > max_width) {
-			img_x = Math.floor(img_ratio * ((tiled_width - max_width) / 2));
-			tiled_width = max_width;
+		if (tiled_width > MAX_IMG_WIDTH) {
+			img_x = Math.floor(img_ratio * ((tiled_width - MAX_IMG_WIDTH) / 2));
+			tiled_width = MAX_IMG_WIDTH;
 		}
-		else if (tiled_width % tile_size != 0) {
+		else if (tiled_width % tile_size !== 0) {
 			tiled_width = Math.floor(tiled_width / tile_size) * tile_size;
 			img_x = Math.floor(img_ratio * ((new_width - tiled_width) / 2));
 		}
-		if (tiled_height > max_height) {
-			img_y = Math.floor(img_ratio * ((tiled_height - max_height) / 2));
-			tiled_height = max_height;
+		if (tiled_height > MAX_IMG_HEIGHT) {
+			img_y = Math.floor(img_ratio * ((tiled_height - MAX_IMG_HEIGHT) / 2));
+			tiled_height = MAX_IMG_HEIGHT;
 		}
-		else if (tiled_height % tile_size != 0) {
+		else if (tiled_height % tile_size !== 0) {
 			tiled_height = Math.floor(tiled_height / tile_size) * tile_size;
 			img_y = Math.floor(img_ratio * ((new_height - tiled_height) / 2));
 		}
 		
 		rows = tiled_height / tile_size;
 		cols = tiled_width / tile_size;
-		
+
 		$canvas.attr({width:tiled_width,height:tiled_height});
 		context = $canvas.get(0).getContext("2d");
-		context.drawImage($img.get(0),img_x,img_y,tiled_width/img_ratio,tiled_height/img_ratio,0,0,tiled_width,tiled_height);
-		new_img_data = $canvas.get(0).toDataURL(imgtype);
+		context.drawImage($orig_preview_img.get(0),
+			img_x, img_y, tiled_width/img_ratio, tiled_height/img_ratio,
+			0, 0, tiled_width, tiled_height
+		);
+		new_img_data = $canvas.get(0).toDataURL(preview_img_type);
 		
-		$img
-		.unbind("load")
-		.attr({"src":""})
+		// update the preview image with the new image data
+		$preview_img
 		.bind("load",function(evt){
-			processingDone(generatePreview(this,imgtype),generateTiles(this,imgtype,tile_size),rows,cols,tile_size);
-		}).attr({"src":new_img_data,"width":tiled_width,"height":tiled_height});
+			$(this).unbind("load");
+
+			$preview_grid = buildPreviewGrid($preview_img,tiled_width,tiled_height,tile_size);
+
+			// save grid meta-data (used later during game upload)
+			$preview_grid.attr({
+				"data-rows": rows,
+				"data-cols": cols,
+				"data-tile-size": tile_size
+			});
+
+			$preview_container
+			// overlay the grid on top of the preview image
+			.append($preview_grid)
+			// done processing the preview finally, so show it
+			.css({"visibility":"visible"});
+
+			// show the preview controls
+			$("#preview_controls").show();
+
+			// enable the game upload button now (if not yet enabled)
+			$("#upload").removeAttr("disabled");
+		})
+		.attr({"src":new_img_data,"width":tiled_width,"height":tiled_height})
+		.appendTo($preview_container);
 	}
-	
-	function viewImage(file) {
+
+	// render initial preview image from file's image data
+	function renderPreview(image_data,image_type) {
+		var $orig_preview_img = $("<img />"),
+			$preview_container = $("#preview_container")
+		;
+			
+		$preview_container.empty().css({"visibility":"hidden"});
 		
+		// draw preview image data into <img>
+		$orig_preview_img
+		.bind("load",function(evt){
+			var img_width = $orig_preview_img.width(), img_height = $orig_preview_img.height();
+			
+			$(this).unbind("load");
+			
+			// enforce minimum dimensions (note: no need to enforce max dimensions, because we just down-scale)
+			if (img_width < MIN_IMG_WIDTH || img_height < MIN_IMG_HEIGHT) {
+				alert("The image dimensions must be at least " + MIN_IMG_WIDTH + "x" + MIN_IMG_HEIGHT + ".");
+				$preview_container.empty().css({"visibility":"visible"});
+				$file_selector.val("").removeAttr("disabled"); // reset the file selector
+			}
+			// otherwise, image dimensions are OK
+			else {
+				// fire off preview image processing based on default difficulty level setting
+				$("#difficulty_selector").trigger("change");
+			}
+		})
+		.attr({id:"orig_preview_img",src:image_data,"data-img-type":image_type})
+		.appendTo("#content");
+	}
+
+	// read image data from file
+	function readFile(file) {
 		var reader = new FileReader(),
-			$img_view_container = $("#img_view_container"),
+			$preview_container = $("#preview_container"),
 			$file_selector = $("#file_selector")
 		;
 		
-		$img_view_container.html("Please wait...processing.");
+		$preview_container.html("Please wait...processing.");
 		
-		reader.onload = function(e){
-			$img_view_container.empty();
-			
-			// Gotcha: Chrome uses `fileSize`, Firefox uses `size`
-			if ((file.fileSize || file.size) <= (1024*150)) { // 150kb max image size
-				var image_contents = e.target.result,
-					$img = $("<img />")
-				;
-					
-				$img_view_container.css({"visibility":"hidden"});
-				
-				$img
-				.bind("load",function(evt){
-					// draw image onto a <canvas>
-					var img_width = $img.width(), img_height = $img.height();
-					
-					// enforce minimum dimensions
-					if (img_width < 250 || img_height < 250) { // TODO: use a constant for min-image-size
-						alert("The image dimensions must be at least 200x200.");
-						$img_view_container.empty().css({"visibility":"visible"});
-						$file_selector.val("").removeAttr("disabled"); // reset the file selector
-						return;
-					}
-					
-					processImage($img,file.type,function(preview_img_data,img_tiles,rows,cols,tile_size){
-						var $preview_img = $("<img />").attr({src:preview_img_data}),
-							$tiles_holder = $("<div>"),
-							$tile_img
-						;
-						
-						$img_view_container.css({"visibility":"visible"});
-						
-						$("#upload").removeAttr("disabled").bind("click",function(){
-							$(this).attr({"disabled":"disabled"});
-							createGame(preview_img_data,img_tiles,rows,cols,tile_size);
-						});
-						
-					});
-					
-				})
-				.attr({"src":image_contents}).appendTo($img_view_container);
-				
-			}
-			else {
-				alert("Image size must be no greater than 150kb.");
-				$file_selector.val("").removeAttr("disabled"); // reset the file selector
-			}
+		// listen for when file read has finished
+		reader.onload = function(evt){
+			$preview_container.empty();
+
+			// render the initial image preview, as just read from the file
+			renderPreview(evt.target.result,file.type);
 		};
+
+		// read the file, format read data as data-URL
 		reader.readAsDataURL(file);
 	}
+
+	function changeDifficulty() {
+		// (re)process the preview with the current difficulty level setting
+		processPreview($(this).val(),$("#orig_preview_img"));
+	}
 	
-	function createGame(preview_img_data,img_tiles,rows,cols,tile_size) {
-		socket.emit("create_game",{preview:preview_img_data,tiles:img_tiles,rows:rows,cols:cols,tile_size:tile_size},function(game_id){
-			gotoPage("play.html",null,false,"play.html?puzzle="+game_id);
-		});
+	function uploadGame($preview_img) {
+		var preview_img_type = $preview_img.attr("data-img-type"),
+			$preview_grid = $("#preview_grid"),
+			rows = parseInt($preview_grid.attr("data-rows"),10),
+			cols = parseInt($preview_grid.attr("data-cols"),10),
+			tile_size = parseInt($preview_grid.attr("data-tile-size"),10),
+			overview_img_data = generateGameOverview($preview_img,preview_img_type),
+			game_tiles = generateTiles($preview_img,preview_img_type,tile_size)
+		;
+
+		$("#file_selector").hide();
+		$("#preview_container").html("Please wait...uploading.");
+		$("#preview_controls").hide();
+
+		socket.emit("create_game",{
+			overview: overview_img_data,
+			tiles: game_tiles,
+			rows: rows,
+			cols: cols,
+			tile_size: tile_size
+		},gameUploaded);
+	}
+
+	function gameUploaded(game_id) {
+		gotoPage("play.html",null,false,"play.html?puzzle="+game_id);
 	}
 	
 	function gameError(data) {
@@ -414,14 +531,24 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 	
 	function userJoinGame(data) {
 		var name = htmlspecialchars(data.name),
-			$li = $("<li>").attr({"data-user":name}).html(name)
+			score = htmlspecialchars(data.score),
+			userid = data.userid,
+			$li = $("<li>").attr({"data-user": userid}).html(name+": "+score);
 		;
 		$("#whosplaying").append($li);
 	}
 	
 	function userLeaveGame(data) {
-		var name = htmlspecialchars(data.name);
-		$("#whosplaying li[data-user='"+name+"']").remove();
+		var userid = data.userid;
+		$("#whosplaying li[data-user='"+userid+"']").remove();
+	}
+
+	function userScore(data) {
+		var name = htmlspecialchars(data.name),
+			score = htmlspecialchars(data.score),
+			userid = data.userid
+		;
+		$("#whosplaying li[data-user='"+userid+"']").html(name+": "+score);
 	}
 	
 	function setGameClockTimer() {
@@ -480,7 +607,7 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 		
 	function userList(data) {
 		for (var i=0; i<data.list.length; i++) {
-			userJoinGame({name:data.list[i]});
+			userJoinGame(data.list[i]);
 		}
 	}
 
@@ -572,6 +699,7 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 				
 				registerPageUnloadHandler(function(){
 					$("#file_selector").unbind("change");
+					$("#difficulty_selector").unbind("change");
 					$("#upload").unbind("click");
 				});
 
@@ -580,17 +708,36 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 				$file_selector.bind("change",function(){
 					var files_array = this.files;
 
-					// we only allowed one file to be selected
+					// was at least one file selected? (note: we only allow one at a time!)
 					if (files_array.length) {
-						if (files_array[0].type.match(/image/)) { // it's an image file
-							viewImage(files_array[0]);
-						
-							$file_selector.attr({"disabled":"disabled"}); // disable the file selector (for now)
+						// is file a recognized image type?
+						if (files_array[0].type.match(/image/)) {
+							// is file within allowed size limit?
+							// Gotcha: Chrome uses `fileSize`, Firefox uses `size`
+							if ((files_array[0].fileSize || files_array[0].size) <= MAX_FILE_SIZE) {
+								$file_selector.attr({"disabled":"disabled"});
+								
+								// read the file for previewing
+								readFile(files_array[0]);
+							}
+							else {
+								alert("File size must be no greater than " + (MAX_FILE_SIZE / 1024) + "kb.");
+								$file_selector.val("").removeAttr("disabled"); // reset the file selector
+							}
 						}
 						else {
 							alert("Please select a recognized image file.");
 							$file_selector.val("");
 						}
+					}
+				});
+
+				$("#difficulty_selector").bind("change",changeDifficulty);
+
+				$("#upload").bind("click",function(){
+					if (!$(this).is(":disabled")) {
+						$(this).attr({"disabled":"disabled"});
+						uploadGame($("#preview_img"));
 					}
 				});
 			},
@@ -616,6 +763,7 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 							socket.removeListener("game_error",gameError);
 							socket.removeListener("user_list",userList);
 							socket.removeListener("user_join",userJoinGame);
+							socket.removeListener("user_score",userScore);
 							socket.removeListener("user_leave",userLeaveGame);
 							socket.removeListener("game_clock",updateGameClock);
 							socket.removeListener("freeze_game",freezeGameClock);
@@ -632,6 +780,7 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 					socket.on("game_error",gameError);
 					socket.on("user_list",userList);
 					socket.on("user_join",userJoinGame);
+					socket.on("user_score",userScore);
 					socket.on("user_leave",userLeaveGame);
 					socket.on("game_clock",updateGameClock);
 					socket.on("freeze_game",freezeGameClock);
