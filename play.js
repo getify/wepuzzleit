@@ -65,10 +65,14 @@
 	var moving_tiles = {},
 		half_tile_width, half_tile_height,
 		fn_tile_drop_ok, fn_tile_drop_invalid,
+		fn_tile_drag_ok, fn_tile_drag_invalid,
+		fn_reset_drag,
 		current_tile_id,
 		gameboard_cols, gameboard_rows,
 		$board, $tiles, $table,
-		game_in_progress = false
+		game_in_progress = false,
+		game_img_loading,
+		GameWorker
 	;
 
 	function build_gameboard(tiles,rows,cols,tile_size) {
@@ -106,8 +110,16 @@
 			}
 		});
 		
+		$tiles.hide();
 		for (var idx in tiles) {
-			$img = $("<img />").attr({"data-tile-id": idx, src: tiles[idx].data});
+			game_img_loading.and(function(done){
+				$img = $("<img />")
+				.bind("load",function(){
+					$(this).unbind("load");
+					done();
+				})
+				.attr({"data-tile-id": idx, src: tiles[idx].data});
+			});
 			$img.get(0).draggable = false;
 			if (tiles[idx].position !== null) {
 				row = Math.floor(tiles[idx].position/gameboard_cols);
@@ -118,10 +130,6 @@
 				$tiles.append($img);
 			}
 		}
-		
-		$board.append($table);
-		
-		$("#game").empty().append($board);
 	}
 	
 	function setup_game() {
@@ -130,28 +138,50 @@
 			can_try_tiles = true
 		;
 		
-		$tiles.delegate("img","mousedown",function(evt){
+		$(document)
+		.bind("contextmenu",function(evt){
+			evt.preventDefault();
+			return false;
+		});
+
+		$tiles
+		.delegate("img","mousedown",function(evt){
 			var $img, img_width, img_height, x, y;
+
+			function reset_drag() {
+				tile_drag_invalid();
+			}
 			
 			function reset_tile() {
-				$img.removeClass("draggable_img").css({
-					left: "0px",
-					top: "0px",
-					"z-index": 0
-				}).appendTo("#tiles");
-				$img = null;
+				if ($img) {
+					$img
+					.removeClass("draggable_img")
+					.css({
+						left: "0px",
+						top: "0px",
+						"z-index": 0
+					})
+					.appendTo("#tiles");
+					$img = null;
+				}
+				$(document).unbind("mousemove mouseup");
+				fn_tile_drop_ok = fn_tile_drop_invalid = fn_tile_drag_ok = fn_tile_drag_invalid = fn_reset_drag = null;
 			}
 				
 			function tile_drop_ok(row,col) {
-				$img.removeClass("draggable_img").css({
-					left: "0px",
-					top: "0px",
-					"z-index": 0
-				});
-				$table.find("tr:eq("+row+") > td:eq("+col+") span").append($img);
-				$img = null;
-				current_tile_id = null;
-				can_try_tiles = true;
+				if ($img) {
+					$img
+					.removeClass("draggable_img")
+					.css({
+						left: "0px",
+						top: "0px",
+						"z-index": 0
+					});
+					$table.find("tr:eq("+row+") > td:eq("+col+") span").append($img);
+					$img = null;
+					current_tile_id = null;
+					can_try_tiles = true;
+				}
 			}
 			
 			function tile_drop_invalid() {
@@ -161,22 +191,25 @@
 			}
 			
 			function tile_drag_ok() {
-				global.GameWorker.postMessage({
+				GameWorker.postMessage({
 					messageType: "move_tile",
 					tile_id: current_tile_id,
 					x: x,
 					y: y
 				});
-				$(document).bind("mousemove",function(evt){
-					x = evt.pageX - half_tile_width;
-					y = evt.pageY - half_tile_height;
-					$img.css({left: x+"px", top: y+"px"});
-					global.GameWorker.postMessage({
-						messageType: "move_tile",
-						tile_id: current_tile_id,
-						x: x,
-						y: y
-					});
+				$(document)
+				.bind("mousemove",function(evt){
+					if ($img) {
+						x = evt.pageX - half_tile_width;
+						y = evt.pageY - half_tile_height;
+						$img.css({left: x+"px", top: y+"px"});
+						GameWorker.postMessage({
+							messageType: "move_tile",
+							tile_id: current_tile_id,
+							x: x,
+							y: y
+						});
+					}
 				}).bind("mouseup",function(evt){
 					var x_board, y_board, col, row, position,
 						board_offset = $table.offset()
@@ -198,7 +231,7 @@
 					else {
 						position = -1; // force drop to be invalid
 					}
-					global.GameWorker.postMessage({
+					GameWorker.postMessage({
 						messageType: "try_tile_position",
 						tile_id: current_tile_id,
 						position: position
@@ -220,6 +253,7 @@
 				fn_tile_drop_invalid = tile_drop_invalid;
 				fn_tile_drag_ok = tile_drag_ok;
 				fn_tile_drag_invalid = tile_drag_invalid;
+				fn_reset_drag = reset_drag;
 
 				$img = $(this);
 				current_tile_id = $img.attr("data-tile-id");
@@ -229,7 +263,7 @@
 				x = evt.pageX - half_tile_width;
 				y = evt.pageY - half_tile_height;
 
-				global.GameWorker.postMessage({
+				GameWorker.postMessage({
 					messageType: "take_tile",
 					tile_id: current_tile_id
 				});
@@ -271,7 +305,7 @@
 			$table.find("tr:eq("+row+") > td:eq("+col+") span").append(moving_tiles[tile_id]);
 			moving_tiles[tile_id] = null;
 		}
-		else {
+		else if (fn_tile_drop_ok) {
 			fn_tile_drop_ok(row,col);
 		}
 	}
@@ -285,31 +319,58 @@
 				"z-index": 0
 			}).appendTo("#tiles");
 		}
-		else {
+		else if (fn_tile_drop_invalid) {
 			fn_tile_drop_invalid();
 		}
 	}
 
+	function reset_player() {
+		if (fn_reset_drag) fn_reset_drag();
+	}
+
 	global.playGame = function(game_session_id) {
-		global.GameWorker = new Worker("ww.js?_="+Math.random());
-		global.GameWorker.onmessage = function(evt) {
+		GameWorker = new Worker("ww.js?_="+Math.random());
+		GameWorker.onmessage = function(evt) {
 			if (game_in_progress) {
 				if (evt.data.error) {
 					alert("Error: "+evt.data.error);
 				}
-				else if (evt.data.overview) {
-					var $img = $("<img />").attr({src: evt.data.overview});
-					$("#game_overview").append($img).show();
-				}
 				else if (evt.data.tiles) {
+					if (!evt.data.in_play) {
+						game_in_progress = false;
+					}
+					var $img = $("<img />");
+
+					game_img_loading = global.$AG(function(done){
+						$img
+						.bind("load",function(){
+							$("#game_overview").append($img);
+							done();
+						})
+						.attr({src: evt.data.overview});
+					});
+
 					build_gameboard(evt.data.tiles,evt.data.rows,evt.data.cols,evt.data.tile_size);
-					setup_game();
-				}
-				else if (evt.data.freeze_game) {
-					freezeGameClock();
+
+					game_img_loading.then(function(){
+						$("#game_overview").show();
+						$board.append($table);
+						$("#game").empty().append($board);
+						$tiles.show();
+
+						// should we set up and start game play?
+						if (game_in_progress) setup_game();
+						else freezeGameClock();
+					});
 				}
 				else if (evt.data.move_tile) {
-					move_tile(evt.data.tile_id,evt.data.x,evt.data.y);
+					for (var tile_id in evt.data.moves) {
+						move_tile(
+							tile_id,
+							evt.data.moves[tile_id].x,
+							evt.data.moves[tile_id].y
+						);
+					}
 				}
 				else if (evt.data.reset_tile) {
 					reset_tile(evt.data.tile_id);
@@ -320,11 +381,14 @@
 				else if (evt.data.reset_tile) {
 					reset_tile(evt.data.tile_id);
 				}
+				else if (evt.data.reset_player) {
+					reset_player();
+				}
 				else if (evt.data.tile_drag_ok) {
-					fn_tile_drag_ok();
+					if (fn_tile_drag_ok) fn_tile_drag_ok();
 				}
 				else if (evt.data.tile_drag_invalid) {
-					fn_tile_drag_invalid();
+					if (fn_tile_drag_invalid) fn_tile_drag_invalid();
 				}
 				else {
 					console.log(evt.data);
@@ -332,7 +396,7 @@
 			}
 		};
 		game_in_progress = true;
-		global.GameWorker.postMessage({
+		GameWorker.postMessage({
 			messageType: "start",
 			game_session_id: game_session_id
 		}); // start the worker
@@ -340,14 +404,14 @@
 	
 	global.quitGame = function() {
 		game_in_progress = false;
-		try { global.GameWorker.terminate(); } catch (err) { }
-		global.GameWorker = null;
+		try { GameWorker.terminate(); } catch (err) { }
+		GameWorker = null;
 		
 		// clean up state
 		$("img[data-tile-id]").remove();
 		$tiles.undelegate("img","mousedown");
-		$(document).unbind("mousemove mouseup");
-		$tiles = $board = $table = half_tile_width = half_tile_height = fn_tile_drop_ok = fn_tile_drop_invalid = current_tile_id = gameboard_cols = gameboard_rows = null;
+		$(document).unbind("contextmenu mousemove mouseup");
+		$tiles = $board = $table = half_tile_width = half_tile_height = fn_tile_drop_ok = fn_tile_drop_invalid = fn_tile_drag_ok = fn_tile_drag_invalid = fn_reset_drag = current_tile_id = gameboard_cols = gameboard_rows = null;
 		moving_tiles = {};
 	};
 	
@@ -356,12 +420,10 @@
 		$tiles.undelegate("img","mousedown");
 		$(document).unbind("mousemove mouseup");
 
-		setTimeout(function(){
-			if ($tiles.is(":empty")) {
-				$tiles.hide();
-				$("#game_overview").hide();
-			}
-		},100);
+		if ($tiles.is(":empty")) {
+			$tiles.hide();
+			$("#game_overview").hide();
+		}
 	};
 
 })(window);

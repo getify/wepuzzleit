@@ -110,7 +110,7 @@ function parseUri(e){var a=parseUri.options,f=a.parser[a.strictMode?"strict":"lo
 					page_cache[page] = $("<div>").append(data.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,"")).find("#content").html();
 					return preInjection(data);
 				}}); // attach pre-injection listener
-				$("#content").load(page+" #content",function(){
+				$("#content").load(page+" #content > *",function(){
 					$.ajaxSetup({dataFilter:function(){}}); // release pre-injection listener
 					postInjection(page);
 				});

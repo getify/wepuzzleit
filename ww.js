@@ -5,21 +5,9 @@ importScripts(ww_socket+"/socket.io/socket.io.js");
 var socket,
 	socket_initialized = false,
 	game_session_started = false,
-	real_tile_ids = {},
-	dom_tile_ids = {},
 	can_send_tile_movement = true,
 	tile_movement_throttle = false
 ;
-
-function new_tile_id() {
-	var id;
-	do {
-		id = Math.round(Math.random() * 1E9);
-	} while (typeof real_tile_ids[id] != "undefined");
-	real_tile_ids[id] = true;
-	return id;
-}
-
 
 function initializeGameSession(game_session_id) {
 	if (!socket) {
@@ -32,35 +20,20 @@ function initializeGameSession(game_session_id) {
 		socket.on("game_session_valid", function(data) {
 			var i, id, new_tiles = {};
 			
-			for (i in data.tiles) {
-				id = new_tile_id();
-				real_tile_ids[id] = i;
-				dom_tile_ids[i] = id;
-				new_tiles[id] = data.tiles[i];
-			}
-			
-			data.tiles = new_tiles;
-			
-			self.postMessage({overview: data.overview});
 			self.postMessage({
+				overview: data.overview,
 				tiles: data.tiles,
 				rows: data.rows,
 				cols: data.cols,
-				tile_size: data.tile_size
+				tile_size: data.tile_size,
+				in_play: data.in_play
 			});
-			
-			// have we joined a finished/frozen game?
-			if (!data.in_play) {
-				setTimeout(function(){
-					self.postMessage({freeze_game: true});
-				},100);
-			}
 		});
 		
 		socket.on("position_tile", function(data) {
 			self.postMessage({
 				position_tile: true,
-				tile_id: dom_tile_ids[data.tile_id],
+				tile_id: data.tile_id,
 				position: data.position
 			});
 		});
@@ -68,21 +41,23 @@ function initializeGameSession(game_session_id) {
 		socket.on("move_tile", function(data) {
 			self.postMessage({
 				move_tile: true,
-				tile_id: dom_tile_ids[data.tile_id],
-				x: data.x,
-				y: data.y
+				moves: data.moves
 			});
 		});
 		
 		socket.on("reset_tile",function(data) {
 			self.postMessage({
 				reset_tile: true,
-				tile_id: dom_tile_ids[data.tile_id]
+				tile_id: data.tile_id
 			});
 		});
 		
 		socket.on("game_session_invalid", function(data) {
 			self.postMessage({error: "game_session_invalid"});
+		});
+
+		socket.on("reset_player",function() {
+			self.postMessage({reset_player: true});
 		});
 	}
 	
@@ -93,7 +68,7 @@ function initializeGameSession(game_session_id) {
 }
 
 function take_tile(tile_id) {
-	socket.emit("take_tile",{tile_id: real_tile_ids[tile_id]},function(ok){
+	socket.emit("take_tile",{tile_id: tile_id},function(ok){
 		if (ok) {
 			self.postMessage({tile_drag_ok: true});
 		}
@@ -110,19 +85,19 @@ function take_tile(tile_id) {
 function move_tile(tile_id,x,y) {
 	if (!tile_movement_throttle) {
 		socket.emit("move_tile",{
-			tile_id: real_tile_ids[tile_id],
+			tile_id: tile_id,
 			x: x,
 			y: y
 		});
 		tile_movement_throttle = setTimeout(function(){
 			tile_movement_throttle = false;
-		},333);
+		},167);
 	}
 }
 
 function try_tile_position(tile_id,position) {
 	socket.emit("try_tile_position",{
-		tile_id: real_tile_ids[tile_id],
+		tile_id: tile_id,
 		position: position
 	});
 	if (tile_movement_throttle) {
