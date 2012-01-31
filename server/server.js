@@ -189,61 +189,73 @@ function create_tile_image_files(game_id,errCB) {
 function checkGameTiles(game_id) {
   var game = games[game_id];
 
-  for (var i in game.tiles) {
-    // is there a tile that's not yet positioned?
-    if (game.tiles[i].position === null) {
-      return;
+  if (game) {
+    for (var i in game.tiles) {
+      // is there a tile that's not yet positioned?
+      if (game.tiles[i].position === null) {
+        return;
+      }
+    }
+
+    if (game.in_play) {
+      game.in_play = false;
+      // otherwise, all tiles positioned correctly, time to end the game
+      setTimeout(function(){
+        endGame(game_id);
+      },500);
     }
   }
-
-  // otherwise, all tiles positioned correctly, time to end the game (after a couple of seconds)!
-  setTimeout(function(){
-    endGame(game_id);
-  },500);
 }
 
 function endGame(game_id) {
-try { console.log("game ended: "+game_id); } catch (err) {}
-
   var game = games[game_id];
 
-  clearInterval(game.move_broadcast);
-  game.move_broadcast = null;
-  game.moves = {};
-  clearInterval(game.clock);
-  game.clock = null;
+  if (game) {
+    clearInterval(game.move_broadcast);
+    game.move_broadcast = null;
+    game.moves = {};
+    clearInterval(game.clock);
+    game.clock = null;
 
-  game.time_left = 0;
+    game.time_left = 0;
 
-  game.in_play = false;
-  // notify connected game sessions of it being over and frozen
-  io.of("/site").in("game:"+game_id).emit("freeze_game", {game_id: game_id} );
+    // notify connected game sessions of it being over and frozen
+    io.of("/site").in("game:"+game_id).emit("freeze_game",{
+      game_id: game_id
+    });
 
-  // game is over and frozen, so close it in 30 seconds
-  setTimeout(function(){
-    game.is_closed = true;
-    game.overview = game.tiles = game.tile_order = game.users = null;
-    game.rows = game.cols = game.tile_size = 0;
+    // game is over and frozen, so close it soon
+    setTimeout(function(){
+      game.is_closed = true;
+      game.overview = game.tiles = game.tile_order = game.users = null;
+      game.rows = game.cols = game.tile_size = 0;
 
-    // notify all users of the game closing
-    io.of("/site").emit("close_game", {game_id: game_id} );
+      // notify all users of the game closing
+      io.of("/site").emit("close_game",{
+        game_id: game_id
+      });
 
-    // remove the game images directory now that the game is fully closed
-    rimraf("./games/" + game_id,function(){});
-  },90*1000); // leave a finished game visible for a little while
+      // remove the game images directory now that the game is fully closed
+      rimraf("./games/" + game_id,function(){});
+    },90*1000);
+  }
 }
 
 function startGameClock(game_id) {
   var game = games[game_id];
 
   // push out update of game clock immediately
-  io.of("/site").in("game:"+game_id).emit("game_clock", {time_left: game.time_left} );
+  io.of("/site").in("game:"+game_id).emit("game_clock",{
+    time_left: game.time_left
+  });
 
   if (!game.clock) {
     game.clock = setInterval(function(){
       if (game.in_play && !game.is_closed) {
         game.time_left = Math.max(0,game.time_left - 5);
-        io.of("/site").in("game:"+game_id).emit("game_clock", {time_left: game.time_left} );
+        io.of("/site").in("game:"+game_id).emit("game_clock",{
+          time_left: game.time_left
+        });
 
         // game clock at 0, so expire game
         if (game.time_left === 0) {
@@ -265,7 +277,9 @@ function startGameMoveBroadcasts(game_id) {
     game.move_broadcast = setInterval(function(){
       if (Object.keys(games[game_id].moves).length > 0) {
         // tell all players of the movements of the tile as it's dragged
-        io.of("/ww").in("game:"+game_id).emit("move_tile", {moves: games[game_id].moves} );
+        io.of("/ww").in("game:"+game_id).emit("move_tile",{
+          moves: games[game_id].moves
+        });
         games[game_id].moves = {};
       }
     },333); // update interval for game tile moves
@@ -285,8 +299,6 @@ function scoreTile(session_id,game_id) {
   }
 
   score += (2 * num_tiles_left);
-
-try { console.log("user: "+users[session_id].userid+", scored: "+score); } catch (err) { }
 
   users[session_id].score += score;
   if (users[session_id].score_update_notify) users[session_id].score_update_notify();
@@ -346,13 +358,13 @@ io.of("/site").on("connection", function (socket) {
   function leave_game(game_session_id) {
     var game_id, game;
 
-    if (game_sessions[game_session_id] && game_sessions[game_session_id].game_id) {
+    if (game_sessions[game_session_id] && 
+      game_sessions[game_session_id].game_id
+    ) {
       game_id = game_sessions[game_session_id].game_id;
       game_sessions[game_session_id] = false;
       try { socket.leave("game:"+game_id); } catch (err) { }
       game = games[game_id];
-
-try { console.log("user: "+users[session_id].userid+", left game: "+game_id); } catch (err) {}
 
       if (game && game.users) {
         for (var i=0; i<game.users.length; i++) {
@@ -364,7 +376,9 @@ try { console.log("user: "+users[session_id].userid+", left game: "+game_id); } 
 
         current_game_session_id = null;
         if (session_id && users[session_id]) {
-          io.of("/site").in("game:"+game_id).emit("user_leave", {userid: users[session_id].userid} );
+          io.of("/site").in("game:"+game_id).emit("user_leave",{
+            userid: users[session_id].userid
+          });
         }
       }
     }
@@ -493,7 +507,7 @@ try { console.log("user logged in: "+users[session_id].userid); } catch (err) {}
   socket.on("logout", function(data,cb) {
     sessions[data.session_id] = false;
     if (users[data.session_id]) users[data.session_id].connected = false;
-    cb("logged_out");
+    cb();
     socket.emit("score_update", {score: ".."});
   });
 
@@ -501,25 +515,30 @@ try { console.log("user logged in: "+users[session_id].userid); } catch (err) {}
     var game_ids = [];
     for (var i in games) {
       if (games[i].fully_created && !games[i].is_closed) {
-        game_ids.push( {game_id: i, overview: games[i].overview.small} );
+        game_ids.push({
+          game_id: i, 
+          overview: games[i].overview.small
+        });
       }
     }
     socket.emit("open_games", {games: game_ids} );
   });
 
   socket.on("join_game", function(data,cb) {
-try { console.log("user: "+users[session_id].userid+", joined game: "+data.game_id); } catch (err) { }
-
     var game_id = data.game_id;
 
     if (games[game_id] && games[game_id].users) {
       current_game_session_id = new_game_session_id();
-      game_sessions[current_game_session_id] = {game_id: game_id, session_id: session_id};
+      game_sessions[current_game_session_id] = {
+        game_id: game_id, 
+        session_id: session_id
+      };
       cb(current_game_session_id);
       socket.emit("user_list", {list: game_user_list(game_id)} );
 
       games[game_id].users.push(session_id);
       socket.join("game:"+game_id);
+
       // notify all players of new user joining the game
       io.of("/site").in("game:"+game_id).emit("user_join", {
         userid: users[session_id].userid,
@@ -540,11 +559,11 @@ try { console.log("user: "+users[session_id].userid+", joined game: "+data.game_
     var game_id = new_game_id(),
         game = games[game_id]
     ;
+
     game.fully_created = false;
-try { console.log("game creation starting: "+game_id); } catch (err) {}
 
     if (Object.keys(games).length > 500) {
-      console.error("Too many games right now.");
+      console.error("Too many games.");
       cb();
       return;
     }
@@ -593,7 +612,6 @@ try { console.log("game creation starting: "+game_id); } catch (err) {}
           })
           .then(function(){
             game.fully_created = true;
-try { console.log("game creation finished: "+game_id); } catch (err) {}
             // if we return a game_id, the client knows the game was successfully created
             cb(game_id);
 
@@ -629,12 +647,20 @@ io.of("/ww").on("connection", function(socket) {
   }
 
   socket.on("establish_game_session", function(data) {
-    if (game_sessions[data.game_session_id] && game_sessions[data.game_session_id].game_id) {
+    if (game_sessions[data.game_session_id] && 
+      game_sessions[data.game_session_id].game_id
+    ) {
       game_session_id = data.game_session_id;
       game_id = game_sessions[game_session_id].game_id;
       session_id = game_sessions[game_session_id].session_id;
 
-      if (sessions[session_id] && users[session_id] && users[session_id].connected && games[game_id] && !games[game_id].is_closed) {
+      if (sessions[session_id] && 
+        users[session_id] && 
+        users[session_id].connected && 
+        games[game_id] && 
+        !games[game_id].is_closed &&
+        games[game_id].fully_created
+      ) {
         socket.join("game:"+game_id);
 
         // send game data to connected player
@@ -652,7 +678,9 @@ io.of("/ww").on("connection", function(socket) {
           games[game_id].in_play = true;
 
           // send out initial clock time
-          io.of("/site").in("game:"+game_id).emit("game_clock", {time_left: games[game_id].time_left} );
+          io.of("/site").in("game:"+game_id).emit("game_clock",{
+            time_left: games[game_id].time_left
+          });
 
           // count down the game clock
           startGameClock(game_id);
@@ -673,20 +701,24 @@ io.of("/ww").on("connection", function(socket) {
     var tile_id = data.tile_id;
 
     if (games[game_id] && games[game_id].in_play) {
-      if (games[game_id].tiles[tile_id] && // tile exists
-        !users[session_id].current_tile_id && // user doesn't currently have any tile?
-        !games[game_id].tiles[tile_id].usser_session_id && // this tile is not assigned to any user?
-        games[game_id].tiles[tile_id].available // tile is available
+      if (users[session_id] && // user still valid?
+        !users[session_id].current_tile_id // user doesn't currently have any tile?
       ) {
         users[session_id].current_tile_id = tile_id;
-        games[game_id].tiles[tile_id].user_session_id = session_id;
-        games[game_id].tiles[tile_id].available = false;
-        games[game_id].tiles[tile_id].position = null;
-        games[game_id].tiles[tile_id].taken = (new Date()).getTime();
 
-        cb(true);
+        if (games[game_id].tiles[tile_id] && // tile still valid?
+          !games[game_id].tiles[tile_id].usser_session_id && // this tile is not assigned to any user?
+          games[game_id].tiles[tile_id].available // tile is available
+        ) {
+          games[game_id].tiles[tile_id].user_session_id = session_id;
+          games[game_id].tiles[tile_id].available = false;
+          games[game_id].tiles[tile_id].position = null;
+          games[game_id].tiles[tile_id].taken = (new Date()).getTime();
 
-        return;
+          cb(true);
+
+          return;
+        }
       }
     }
 
@@ -752,7 +784,10 @@ io.of("/ww").on("connection", function(socket) {
         y = data.y
     ;
 
-    if (games[game_id] && games[game_id].tiles && games[game_id].tiles[tile_id]) {
+    if (games[game_id] && 
+      games[game_id].tiles && 
+      games[game_id].tiles[tile_id]
+    ) {
       games[game_id].moves[tile_id] = {x: x, y: y};
     }
   });
@@ -760,16 +795,20 @@ io.of("/ww").on("connection", function(socket) {
   socket.on("reset_tile", function(data) {
     var tile_id = data.tile_id;
 
-    if (games[game_id] && games[game_id].tiles && games[game_id].tiles[tile_id]) {
+    if (games[game_id] && 
+      games[game_id].tiles && 
+      games[game_id].tiles[tile_id]
+    ) {
       resetTileAndUser(tile_id);
     }
   });
 
   socket.on("disconnect", function(data) {
-    try { socket.leave("game:"+game_id); } catch (err) { }
-
     // do we need to reset the disconnecting user's current tile?
-    if (users[session_id].current_tile_id && // disconnecting user has a tile?
+    if (users[session_id] && // user still valid?
+      games[game_id] && // game still valid?
+      users[session_id].current_tile_id && // disconnecting user has a tile?
+      games[game_id].tiles[users[session_id].current_tile_id] && // tile still valid?
       !games[game_id].tiles[users[session_id].current_tile_id].position // tile is not already correctly positioned?
     ) {
       games[game_id].tiles[users[session_id].current_tile_id].user_session_id = null;
