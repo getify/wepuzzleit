@@ -7,7 +7,8 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 
 	var MAX_FILE_SIZE = 200*1024, // 200k max file size
 		MIN_IMG_WIDTH = 250, MIN_IMG_HEIGHT = 250,
-		MAX_IMG_WIDTH = 650, MAX_IMG_HEIGHT = 650
+		MAX_IMG_WIDTH = 650, MAX_IMG_HEIGHT = 650,
+		FILEREADER_DEFINED = ("FileReader" in window)
 	;
 
 	function is_func(func) { return (Object.prototype.toString.call(check) == "[object Function]"); }
@@ -262,9 +263,10 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 			context = $tile_canvas.get(0).getContext("2d"),
 			x, y, tiles = []
 		;
-		
+		context.fillStyle = "white";
 		for (y=0; y<img_height; y+=tile_size) {
 			for (x=0; x<img_width; x+=tile_size) {
+				context.fillRect(0,0,tile_size,tile_size);
 				context.drawImage(preview_img,
 					x, y, tile_size, tile_size,
 					0, 0, tile_size, tile_size
@@ -281,14 +283,13 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 			max_small_width = 75, max_small_height = 75,
 			max_overview_width = Math.floor(img_width * 0.5),
 			max_overview_height = Math.floor(img_height * 0.5),
-			$overview_canvas = $("<canvas />"),
+			$overview_canvas = $("<canvas />"), small_data, big_data,
 			context = $overview_canvas.get(0).getContext("2d"),
 			delta_width = img_width - max_overview_width,
 			delta_height = img_height - max_overview_height,
-			small_width, small_height, overview_width, overview_height,
-			small_data, big_data
+			small_width, small_height, overview_width, overview_height
 		;
-		
+
 		if (delta_width >= delta_height) {
 			small_width = max_small_width;
 			small_height = Math.floor(img_height / img_width * small_width);
@@ -493,8 +494,7 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 			if (img_width < MIN_IMG_WIDTH || img_height < MIN_IMG_HEIGHT) {
 				alert("The image dimensions must be at least " + MIN_IMG_WIDTH + 
 					"x" + MIN_IMG_HEIGHT + ".");
-				$preview_container.empty().css({"visibility":"visible"});
-				$file_selector.val("").removeAttr("disabled"); // reset the file selector
+				uploadReset();
 			}
 			// otherwise, image dimensions are OK
 			else {
@@ -508,23 +508,44 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 
 	// read image data from file
 	function readFile(file) {
-		var reader = new FileReader(),
-			$preview_container = $("#preview_container"),
-			$file_selector = $("#file_selector")
-		;
+		// render the initial image preview with the dataURI
+		function preview(dataURI) {
+			$preview_container.empty();
+			renderPreview(dataURI,file.type);
+		}
+
+		var $preview_container = $("#preview_container");
 		
 		$preview_container.html("Please wait...processing.");
 		
-		// listen for when file read has finished
-		reader.onload = function(evt){
-			$preview_container.empty();
+		// is the local file access FileReader API defined?
+		if (FILEREADER_DEFINED) {
+			var reader = new FileReader();
+			// listen for when file read has finished
+			reader.onload = function(evt) {
+				reader.onload = null;
+				preview(evt.target.result);
+			};
 
-			// render the initial image preview, as just read from the file
-			renderPreview(evt.target.result,file.type);
-		};
-
-		// read the file, format read data as data-URL
-		reader.readAsDataURL(file);
+			// read the file, format read data as data-URL
+			reader.readAsDataURL(file);
+		}
+		// otherwise, do xhr-upload workaround
+		else {
+			var xhr = new XMLHttpRequest();
+			xhr.onreadystatechange = function() {
+				if (xhr.readyState == 4) {
+					xhr.onreadystatechange = null;
+					preview(xhr.responseText);
+				}
+			};
+			xhr.open("POST", "get-data-uri/");
+			xhr.setRequestHeader("Content-Type", "multipart/form-data");
+			xhr.setRequestHeader("X-File-Name", file.name);
+			xhr.setRequestHeader("X-File-Size", (file.size || file.fileSize));
+			xhr.setRequestHeader("X-File-Type", file.type);
+			xhr.send(file);
+		}
 	}
 
 	function changeDifficulty() {
@@ -543,6 +564,7 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 		;
 
 		$("#file_selector").hide();
+		$("#upload_reset").hide();
 		$("#preview_container").html("Please wait...uploading.");
 		$("#preview_controls").hide();
 
@@ -565,7 +587,7 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 		}
 	}
 	
-	function gameError(data) {
+	function gameError() {
 		gotoPage("puzzles.html");
 	}
 	
@@ -592,6 +614,10 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 	}
 	
 	function setGameClockTimer() {
+		if (game_clock_interval) {
+			clearInterval(game_clock_interval);
+			game_clock_interval = null;
+		}
 		game_clock_interval = setInterval(function(){
 			updateGameClock({time_left: (game_clock-1)});
 		},1000);
@@ -653,6 +679,100 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 		}
 	}
 
+	function handleFileSelected(files) {
+		// was at least one file selected?
+		if (files.length) {
+			// we only deal with one file!
+			var file = files[0];
+
+			// is file a recognized image type?
+			if (file.type.match(/^image\/(?:png|gif|jpe?g)/)) {
+				// is file within allowed size limit?
+				// Gotcha: Chrome has `fileSize`, Firefox has `size`
+				if ((file.fileSize || file.size) <= MAX_FILE_SIZE) {
+					uploadPause();
+					
+					// read the file for previewing
+					readFile(file);
+				}
+				else {
+					alert("File size must be no greater than " + 
+						Math.floor(MAX_FILE_SIZE / 1024) + "kb.");
+					uploadReset();
+				}
+			}
+			else {
+				alert("Please select a recognized and web-compatible image (png/gif/jpg) file.");
+				uploadReset();
+			}
+		}
+	}
+
+	function uploadPause() {
+		$("#file_selector").attr({"disabled":"disabled"});
+		$("#file_dropzone").hide();
+	}
+
+	function uploadReset() {
+		$("#orig_preview_img").unbind("load").remove();
+		$("#file_selector").val("").removeAttr("disabled");
+		$("#file_dropzone").removeClass("okdrop nodrop").show();
+		$("#preview_container").empty().css({"visibility":"visible"});
+		$("#preview_controls").hide();
+	}
+
+	function isFileDragEvent(types) {
+		function isMozEvent(types) {
+			for (var idx in types) { if (types.hasOwnProperty(idx)) {
+				if (types[idx].match(/^application\/x-moz/)) return true;
+			}}
+			return false;
+		}
+
+		var evtType = isMozEvent(types) ? "application/x-moz-file" : "Files";
+		return ((types.contains) ? types.contains(evtType) : types.indexOf(evtType) != -1);
+	}
+
+	function dragFileAccept(evt) {
+		var $file_dropzone = $(this);
+
+		if (evt.originalEvent.dataTransfer.types && 
+			isFileDragEvent(evt.originalEvent.dataTransfer.types)
+		) {
+			evt.originalEvent.dataTransfer.dropEffect = "copy";
+			$file_dropzone.removeClass("nodrop").addClass("okdrop");
+		}
+		else {
+			evt.originalEvent.dataTransfer.dropEffect = "none";
+			$file_dropzone.removeClass("okdrop").addClass("nodrop");
+		}
+
+		evt.stopPropagation();
+		evt.preventDefault();
+		return false;
+	}
+
+	function dragFileReject(evt) {
+		evt.originalEvent.dataTransfer.dropEffect = "none";
+		$("#file_dropzone").removeClass("okdrop nodrop");
+
+		evt.stopPropagation();
+		evt.preventDefault();
+		return false;
+	}
+
+	function dragFileLeave(evt) {
+		$("#file_dropzone").removeClass("okdrop nodrop");
+	}
+
+	function dropFileAccept(evt) {
+		$(this).removeClass("okdrop nodrop");
+		handleFileSelected(evt.originalEvent.dataTransfer.files);
+
+		evt.preventDefault();
+		evt.stopPropagation();
+		return false;
+	}
 
 	var session_id = retrieveSessionId(),
 		session_initialized = false,
@@ -738,55 +858,44 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 				if (!session_id || !user_info) return login_needed("new-puzzle.html");
 				
 				registerPageUnloadHandler(function(){
-					$("#file_selector").unbind("change");
-					$("#difficulty_selector").unbind("change");
-					$("#upload").unbind("click");
+					$file_selector.unbind("change");
+					$("body").unbind("dragover dragend");
+					$file_dropzone.unbind("dragleave dragover dragenter drop");
+					$difficulty_selector.unbind("change");
+					$upload.unbind("click");
+					$upload_reset.unbind("click");
 				});
 
-				var $file_selector = $("#file_selector");
+				var $file_selector = $("#file_selector"),
+					$file_dropzone = $("#file_dropzone"),
+					$difficulty_selector = $("#difficulty_selector"),
+					$upload = $("#upload"),
+					$upload_reset = $("#upload_reset")
+				;
 
-				if (!("FileReader" in window)) {
-					$file_selector.attr({disabled:"disabled"});
-					alert("Sorry, you don't have the 'FileReader' API in this browser, so you can't create a puzzle. Work around coming soon.");
-				}
+				uploadReset();
 
 				$file_selector.bind("change",function(){
-					var files_array = this.files;
-
-					// was at least one file selected? (note: we only allow one at a time!)
-					if (files_array.length) {
-						// is file a recognized image type?
-						if (files_array[0].type.match(/image/)) {
-							// is file within allowed size limit?
-							// Gotcha: Chrome uses `fileSize`, Firefox uses `size`
-							if ((files_array[0].fileSize || files_array[0].size) <= MAX_FILE_SIZE) {
-								$file_selector.attr({"disabled":"disabled"});
-								
-								// read the file for previewing
-								readFile(files_array[0]);
-							}
-							else {
-								alert("File size must be no greater than " + 
-									(MAX_FILE_SIZE / 1024) + "kb.");
-								// reset the file selector
-								$file_selector.val("").removeAttr("disabled");
-							}
-						}
-						else {
-							alert("Please select a recognized image file.");
-							$file_selector.val("");
-						}
-					}
+					handleFileSelected(this.files);
 				});
 
-				$("#difficulty_selector").bind("change",changeDifficulty);
+				$("body")
+				.bind("dragover", dragFileReject);
+				$file_dropzone
+				.bind("dragover dragenter", dragFileAccept)
+				.bind("dragleave", dragFileLeave)
+				.bind("drop", dropFileAccept);
 
-				$("#upload").bind("click",function(){
+				$difficulty_selector.bind("change",changeDifficulty);
+
+				$upload.bind("click",function(){
 					if (!$(this).is(":disabled")) {
 						$(this).attr({"disabled":"disabled"});
 						uploadGame($("#preview_img"));
 					}
 				});
+
+				$upload_reset.click(uploadReset);
 			},
 			
 			

@@ -489,7 +489,6 @@ io.of("/site").on("connection", function (socket) {
       socket.emit("login_error", resp );
     }
     else {
-try { console.log("user logged in: "+users[session_id].userid); } catch (err) {}
       socket.emit("login_complete", resp );
       socket.emit("score_update", {score: users[session_id].score} );
     }

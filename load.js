@@ -13,7 +13,7 @@
 var site_socket = "http://174.120.72.139:80";
 
 $LAB
-.script("//ajax.googleapis.com/ajax/libs/jquery/1.6.4/jquery.min.js").wait(function(){
+.script("//ajax.googleapis.com/ajax/libs/jquery/1/jquery.min.js").wait(function(){
 	$(document).ready(function(){
 		$("#pleasewait").show();
 	});

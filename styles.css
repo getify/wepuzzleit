@@ -1,8 +1,9 @@
+body{height:100%;margin:0px;}
 h1{position:absolute;left:20px;top:10px;font-size:28px;line-height:28px;margin:0px;padding:0px;}
 h2{font-size:23px;line-height:23px;}
-#content{margin-top:15px;}
+#content{margin-top:15px;padding:0px 10px;}
 #logged_in{display:none;}
-.nav{text-align:right;height:55px;}
+nav{text-align:right;height:55px;padding-right:10px;}
 .error{color:red;font-weight:bold;}
 #connection_failed{display:none;}
 #pleasewait{display:none;position:absolute;left:250px;top:5px;padding:4px 20px;font-size:17px;line-height:25px;background-color:#fff;border:1px solid #000;}
@@ -10,6 +11,9 @@ h2{font-size:23px;line-height:23px;}
 #puzzles li{float:left;display:inline;margin:10px 10px 0px 0px;}
 #puzzles li a{display:block;width:75px;height:75px;line-height:75px;text-align:center;}
 #puzzles li a img{vertical-align:middle;}
+#file_dropzone{width:75px;height:75px;border:1px dashed #000;background-color:#aaa;cursor:crosshair;margin-top:5px;}
+#file_dropzone.okdrop{background-color:#2c2;}
+#file_dropzone.nodrop{background-color:#c30;cursor:not-allowed;}
 #orig_preview_img{position:absolute;left:-5000px;top:0px;}
 #preview_container{position:relative;}
 #preview_grid{position:absolute;left:0px;top:0px;}

@@ -1,1 +1,4 @@
 AddType text/cache-manifest cache-manifest.txt
+
+RewriteEngine on
+RewriteRule get-data-uri/ get-data-uri.php [L]

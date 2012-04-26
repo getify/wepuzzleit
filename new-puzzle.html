@@ -1,15 +1,15 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 <title>We Puzzle It! (New Puzzle)</title>
 <script src="load.js"></script>
-<link type="text/css" rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="styles.css">
 </head>
 
 <body>
 <div id="pleasewait">Connecting...</div>
-<div class="nav">
+<nav>
 	<p>
 		<a href="./">home</a> | <a href="puzzles.html">puzzles</a> | <a href="new-puzzle.html">new puzzle</a>
 	</p>
@@ -17,14 +17,14 @@
 		<span id="logged_in">Hello, <span id="your_name"></span>. Score: <span id="score">..</span> | <a id="logout" rel="noajax" href="./">logout</a></span>
 		<strong id="connection_failed" class="error">Connection Failed. Refresh to try again.</strong>
 	</p>
-</div>
+</nav>
 <h1>We Puzzle It!</h1>
 
 <div id="content">
-	<h2>Make A New Puzzle</h2>
-	<p>Upload a picture to create a new puzzle. Must be at least 250x250 and no greater than 200k.</p>
+	<h2>Create A New Puzzle</h2>
+	<p>Upload a picture to create a new puzzle. Must be at least 250x250 and no greater than 200k. You can also drag a picture file onto the gray box.</p>
 	<p>Want some suggested images? Check <a rel="noajax" href="sample-images.html" target="_blank">these images</a> out.</p>
-	<input type="file" id="file_selector" /><br />
+	<input type="file" id="file_selector" accept="image/*"> <div id="file_dropzone" title="Drag a picture file and drop it here!"></div><br>
 	<div id="preview_container"></div>
 	<div id="preview_controls">
 		Difficulty: <select id="difficulty_selector">
@@ -32,9 +32,9 @@
 			<option value="medium">medium</option>
 			<option value="hard">hard</option>
 		</select>
-		<input type="button" id="upload" value="create puzzle" disabled />
+		<input type="button" id="upload" value="create puzzle" disabled>
 	</div>
-	
+	<input type="button" id="upload_reset" value="reset">
 </div>
 
 </body>
