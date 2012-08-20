@@ -1,3 +1,7 @@
+// modified from: getUserMedia.noFallback.js
+// https://github.com/addyosmani/getUserMedia.js
+(function(b,a){var c=(navigator.getUserMedia||navigator.webkitGetUserMedia||navigator.mozGetUserMedia||navigator.msGetUserMedia);if(c){b.getUserMedia=function(p,g,k){if(p!==undefined){navigator.getUserMedia_=c;var i={};var j="";var d,o,f,h,n;if(p.video===true){i.video=true;j="video"}if(p.audio===true){i.audio=true;if(j!==""){j=j+", "}j=j+"audio"}d=a.getElementById(p.el);o=a.createElement("video");h=parseInt(d.offsetWidth,10);n=parseInt(d.offsetHeight,10);if(p.width<h&&p.height<n){p.width=h;p.height=n}o.width=p.width;o.height=p.height;o.autoplay=true;d.appendChild(o);f=o;p.videoEl=f;p.context="webrtc";try{navigator.getUserMedia_(i,g,k)}catch(l){try{navigator.getUserMedia_(j,g,k)}catch(m){return undefined}}}}}}(this,document));
+
 // from PHP.js
 // https://github.com/kvz/phpjs/
 function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"||h===null){h=2}c=c.toString();if(b!==false){c=c.replace(/&/g,"&amp;")}c=c.replace(/</g,"&lt;").replace(/>/g,"&gt;");var a={ENT_NOQUOTES:0,ENT_HTML_QUOTE_SINGLE:1,ENT_HTML_QUOTE_DOUBLE:2,ENT_COMPAT:2,ENT_QUOTES:3,ENT_IGNORE:4};if(h===0){f=true}if(typeof h!=="number"){h=[].concat(h);for(d=0;d<h.length;d++){if(a[h[d]]===0){f=true}else{if(a[h[d]]){e=e|a[h[d]]}}}h=e}if(h&a.ENT_HTML_QUOTE_SINGLE){c=c.replace(/'/g,"&#039;")}if(!f){c=c.replace(/"/g,"&quot;")}return c}
@@ -8,7 +12,10 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 	var MAX_FILE_SIZE = 200*1024, // 200k max file size
 		MIN_IMG_WIDTH = 250, MIN_IMG_HEIGHT = 250,
 		MAX_IMG_WIDTH = 650, MAX_IMG_HEIGHT = 650,
-		FILEREADER_DEFINED = ("FileReader" in window)
+		FILEREADER_DEFINED = ("FileReader" in window),
+
+		// did the "getUserMedia.noFallback.js" shim define it for us?
+		GETUSERMEDIA_DEFINED = !!window.getUserMedia
 	;
 
 	function is_func(func) { return (Object.prototype.toString.call(check) == "[object Function]"); }
@@ -474,8 +481,7 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 	// render initial preview image from file's image data
 	function renderPreview(image_data,image_type) {
 		var $orig_preview_img = $("<img />"),
-			$preview_container = $("#preview_container"),
-			$file_selector = $("#file_selector")
+			$preview_container = $("#preview_container")
 		;
 			
 		$preview_container.empty().css({"visibility":"hidden"});
@@ -719,6 +725,7 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 		$("#file_dropzone").removeClass("okdrop nodrop").show();
 		$("#preview_container").empty().css({"visibility":"visible"});
 		$("#preview_controls").hide();
+		$("#difficulty_selector").val("easy");
 	}
 
 	function isFileDragEvent(types) {
@@ -772,6 +779,80 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 		evt.preventDefault();
 		evt.stopPropagation();
 		return false;
+	}
+
+	function showVideoCaptureControls(evt) {
+		var $video_capture = $("#video_capture");
+		if ($video_capture.is(":hidden")) {
+			uploadReset();
+			uploadPause();
+			$video_capture.show();
+			$("#video_capture .capture").removeAttr("disabled");
+			global.getUserMedia(
+				/*options=*/{
+					video: true,
+					el: "video_container",
+					width: 500,
+					height: 410
+				},
+				/*success=*/startVideoCapture,
+				/*error=*/videoCaptureFailed
+			);
+		}
+
+		evt.preventDefault();
+		return false;
+	}
+
+	function cancelVideoCapture(evt) {
+		var $video_capture = $("#video_capture"),
+			$video = $video_capture.find("video")
+		;
+		$video[0].pause();
+		$video.removeAttr("src");
+		$video.remove();
+		$video_capture.hide().find(".capture").attr({disabled:"disabled"});
+		uploadReset();
+
+		if (evt) {
+			evt.preventDefault();
+			return false;
+		}
+	}
+
+	function captureSnapshot(evt) {
+		var $canvas = $("<canvas></canvas>").attr({width:500,height:410}),
+			context = $canvas[0].getContext("2d")
+		;
+		context.drawImage($("#video_capture video")[0],0,0,500,410);
+		cancelVideoCapture(evt);
+
+		uploadPause();
+
+		renderPreview($canvas[0].toDataURL("image/jpeg"),"image/jpeg");
+
+		if (evt) {
+			evt.preventDefault();
+			return false;
+		}
+	}
+
+	function startVideoCapture(stream) {
+		$video = $("#video_capture video");
+		if (global.webkitURL) {
+			$video.attr({
+				src: global.webkitURL.createObjectURL(stream)
+			});
+		}
+		else {
+			$video[0].src = stream;
+		}
+		$video[0].play();
+	}
+
+	function videoCaptureFailed() {
+		cancelVideoCapture();
+		alert("Video capture failed. Try again.");
 	}
 
 	var session_id = retrieveSessionId(),
@@ -864,14 +945,27 @@ function htmlspecialchars(c,h,g,b){var e=0,d=0,f=false;if(typeof h==="undefined"
 					$difficulty_selector.unbind("change");
 					$upload.unbind("click");
 					$upload_reset.unbind("click");
+					$video_capture_controls.find(".get").unbind("click");
+					$video_capture_do_btn.unbind("click");
+					$video_capture_cancel_btn.unbind("click");
 				});
 
 				var $file_selector = $("#file_selector"),
 					$file_dropzone = $("#file_dropzone"),
 					$difficulty_selector = $("#difficulty_selector"),
 					$upload = $("#upload"),
-					$upload_reset = $("#upload_reset")
+					$upload_reset = $("#upload_reset"),
+					$video_capture_controls = $("#video_capture_controls"),
+					$video_capture_do_btn = $("#video_capture .capture"),
+					$video_capture_cancel_btn = $("#video_capture .cancel")
 				;
+
+				if (GETUSERMEDIA_DEFINED) {
+					$video_capture_controls.show();
+					$video_capture_controls.find(".get").bind("click",showVideoCaptureControls);
+					$video_capture_do_btn.bind("click",captureSnapshot);
+					$video_capture_cancel_btn.bind("click",cancelVideoCapture);
+				}
 
 				uploadReset();
 

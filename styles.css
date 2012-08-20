@@ -18,6 +18,10 @@ nav{text-align:right;height:55px;padding-right:10px;}
 #preview_container{position:relative;}
 #preview_grid{position:absolute;left:0px;top:0px;}
 #preview_controls{display:none;}
+#video_capture_controls{display:none;}
+#video_capture{display:none;}
+#video_container{width:500px;height:410px;}
+#video_container video{display:table;width:500px;height:410px;}
 #game_overview{display:none;}
 #grid{border:none;}
 #grid span{display:block;}

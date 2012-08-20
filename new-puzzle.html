@@ -24,6 +24,13 @@
 	<h2>Create A New Puzzle</h2>
 	<p>Upload a picture to create a new puzzle. Must be at least 250x250 and no greater than 200k. You can also drag a picture file onto the gray box.</p>
 	<p>Want some suggested images? Check <a rel="noajax" href="sample-images.html" target="_blank">these images</a> out.</p>
+	<div id="video_capture_controls">
+		<a href="#" class="get">Get Snapshot</a>
+		<div id="video_capture">
+			<input class="capture" type="button" value="Capture" title="Click to capture snapshot from video stream" disabled> <input class="cancel" type="button" value="Cancel" title="Cancel snapshot capture">
+			<div id="video_container"></div>
+		</div>
+	</div>
 	<input type="file" id="file_selector" accept="image/*"> <div id="file_dropzone" title="Drag a picture file and drop it here!"></div><br>
 	<div id="preview_container"></div>
 	<div id="preview_controls">
